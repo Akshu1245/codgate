@@ -16,12 +16,14 @@ CodGate is not another RTO model. It is the control plane after risk intelligenc
 | Retry safety | `Idempotency-Key` replays the same receipt/link metadata and prevents duplicate decision audit rows |
 | Decision receipt | Deterministic `cgr_...` receipt binds order fingerprint + policy source + decision + rules |
 | Audit integrity | New `audit.jsonl` rows are SHA-256 chained; `/audit/verify` detects edits or chain breaks |
+| Outcome feedback | `POST /orders/{order_id}/outcome` records `DELIVERED` or `RTO` in a separate chained ledger |
+| Live economics | `/metrics/live` joins observed outcomes to real decisions without editing the frozen benchmark |
 | Policy provenance | `/policy/manifest` hashes `policy.py`, `features.py` and `pincodes.py` without duplicating policy logic |
-| Readiness | `/ready` fails if the held-out CSV hash drifts or the audit hash chain is broken |
+| Readiness | `/ready` fails if the held-out CSV hash, decision chain or outcome chain is broken |
 | Payment trace | Razorpay test Payment Links use the CodGate receipt as `reference_id` and in notes |
 | Safe simulation | Unknown/fabricated `plink_SIMULATED_*` ids cannot be marked paid |
 
-The desk keeps the same four surfaces: **Gate / Policy / Metrics / Audit**. The Gate now exposes **ENFORCE / SHADOW** without adding a second policy. The result carries an operational receipt; Policy shows source provenance; Audit shows chain verification.
+The desk keeps the same four surfaces: **Gate / Policy / Metrics / Audit**. The Gate exposes **ENFORCE / SHADOW** without adding a second policy. The result carries an operational receipt; Policy shows source provenance; Metrics keeps the frozen block and separately shows observed traffic; Audit shows chain verification.
 
 ## Policy v1.0
 
@@ -61,6 +63,24 @@ SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a
 ```
 
 These are prototype economics on the frozen 80-row file, not a claim about Razorpay production performance. A real rollout should start in shadow on a merchant cohort and re-evaluate by merchant/value/pincode/customer tenure before enforcement.
+
+## Observed outcomes — separate from the frozen set
+
+A real risk control is incomplete until it learns what happened after fulfilment. CodGate therefore has a second, append-only outcome ledger:
+
+```text
+POST /orders/ord_123/outcome
+{"outcome":"DELIVERED","source":"courier"}
+```
+
+or
+
+```text
+POST /orders/ord_123/outcome
+{"outcome":"RTO","source":"courier"}
+```
+
+`/metrics/live` joins the latest decision per order with the observed fulfilment outcome and reports coverage, precision/recall, ₹ false-block/missed-RTO cost, shadow volume and prepaid conversion for enforced FORCE_PREPAID decisions. Outcome rows are SHA-256 chained and are **never** written into `data/heldout.csv`; the frozen benchmark remains frozen.
 
 ## What broke
 
@@ -106,12 +126,12 @@ Idempotency-Key: <checkout retry key>
 - Same idempotency key + same request returns the original receipt/link metadata with `idempotent_replay: true` and no second decision row.
 - Same idempotency key + changed request returns HTTP 409.
 
-Operational endpoints: `/health`, `/ready`, `/ops/status`, `/policy/manifest`, `/audit/verify`, `/metrics`.
+Operational endpoints: `/health`, `/ready`, `/ops/status`, `/policy/manifest`, `/audit/verify`, `/outcomes/verify`, `/metrics`, `/metrics/live`.
 
 See [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for the request contract and [`docs/JUDGE_REDTEAM.md`](docs/JUDGE_REDTEAM.md) for the explicit production gaps and judge attacks.
 
 ## What would still be required inside Razorpay
 
-This repo is a working prototype, not a claim that a public FastAPI service should be dropped into production unchanged. Productionisation would replace local JSONL/idempotency storage with Razorpay durable infrastructure, add service auth and merchant tenancy, bind the input contract to internal Magic Checkout/RTO signals, close real Payment Link state with webhooks, and put policy version approval/rollback under internal controls.
+This repo is a working prototype, not a claim that a public FastAPI service should be dropped into production unchanged. Productionisation would replace local JSONL/idempotency storage with Razorpay durable infrastructure, add service auth and merchant tenancy, bind the input contract to internal Magic Checkout/RTO signals, ingest real courier/fulfilment events instead of the public outcome endpoint, close real Payment Link state with signed webhooks, and put policy version approval/rollback under internal controls.
 
 The part CodGate is asking Razorpay to value is the **governance contract**: risk intelligence should end in a named, versioned, measurable and traceable merchant action.
