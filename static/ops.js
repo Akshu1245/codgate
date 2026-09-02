@@ -6,6 +6,8 @@
   let lastDecision = null;
 
   const short = value => String(value || "—").slice(0, 18);
+  const pct = value => value === null || value === undefined ? "—" : `${(Number(value) * 100).toFixed(1)}%`;
+  const money = value => `₹${Number(value || 0).toLocaleString("en-IN")}`;
   const node = (tag, className, text) => {
     const el = document.createElement(tag);
     if (className) el.className = className;
@@ -110,6 +112,34 @@
     table.insertAdjacentElement("afterend", manifest);
   }
 
+  function installLiveEvidence() {
+    const section = document.getElementById("metrics");
+    const body = section?.querySelector(".metricbody");
+    if (!section || !body || document.getElementById("live-evidence")) return;
+
+    const block = node("div", "note-sheet");
+    block.id = "live-evidence";
+    block.style.marginTop = "34px";
+    block.style.paddingTop = "22px";
+    block.style.borderTop = "1px solid var(--border)";
+    block.appendChild(node("div", "kicker", "Observed outcomes · separate ledger"));
+    block.appendChild(node("h2", "", "Shadow-to-enforce evidence"));
+    const note = node("p", "muted", "POST /orders/:id/outcome with DELIVERED or RTO. These observations never modify data/heldout.csv.");
+    note.style.maxWidth = "760px";
+    block.appendChild(note);
+
+    const docket = node("dl", "docket");
+    docket.style.marginTop = "16px";
+    for (const label of ["Coverage", "Observed P / R", "Observed cost", "Prepaid paid", "Shadow decisions"]) {
+      docket.appendChild(node("dt", "", label));
+      const dd = node("dd", label === "Observed cost" ? "mono" : "", "—");
+      dd.dataset.live = label;
+      docket.appendChild(dd);
+    }
+    block.appendChild(docket);
+    body.insertAdjacentElement("afterend", block);
+  }
+
   async function refreshAuditIntegrity() {
     const line = document.querySelector("#audit-integrity .route");
     if (!line) return;
@@ -124,6 +154,21 @@
       line.textContent = "audit verification unavailable";
       line.className = "route stop";
     }
+  }
+
+  async function refreshLiveEvidence() {
+    const block = document.getElementById("live-evidence");
+    if (!block) return;
+    try {
+      const response = await originalFetch("/metrics/live");
+      const data = await response.json();
+      const fields = Object.fromEntries([...block.querySelectorAll("dd")].map(el => [el.dataset.live, el]));
+      if (fields["Coverage"]) fields["Coverage"].textContent = `${data.observed_outcomes}/${data.eligible_decisions} · ${pct(data.coverage)}`;
+      if (fields["Observed P / R"]) fields["Observed P / R"].textContent = `${pct(data.precision)} / ${pct(data.recall)}`;
+      if (fields["Observed cost"]) fields["Observed cost"].textContent = `false-block ${money(data.false_block_inr)} · missed-RTO ${money(data.missed_rto_inr)}`;
+      if (fields["Prepaid paid"]) fields["Prepaid paid"].textContent = `${data.prepaid_paid}/${data.enforced_force_prepaid} · ${pct(data.prepaid_conversion_rate)}`;
+      if (fields["Shadow decisions"]) fields["Shadow decisions"].textContent = String(data.shadow_decisions || 0);
+    } catch (_) {}
   }
 
   async function refreshOpsStatus() {
@@ -143,7 +188,7 @@
           node(
             "div",
             "route",
-            `${executionMode.toUpperCase()} · audit ${data.audit?.verified ? "verified" : "failed"} · ${data.payment_provider?.mode || "simulated"} · policy ${short(data.policy?.policy_source_sha256)}…`
+            `${executionMode.toUpperCase()} · audit ${data.audit?.verified ? "verified" : "failed"} · outcomes ${data.outcomes?.verified ? "verified" : "failed"} · ${data.payment_provider?.mode || "simulated"} · policy ${short(data.policy?.policy_source_sha256)}…`
           )
         );
       }
@@ -160,6 +205,7 @@
   installModeControl();
   installAuditIntegrity();
   installPolicyManifest();
+  installLiveEvidence();
 
   const card = document.getElementById("result-card");
   if (card) {
@@ -170,6 +216,8 @@
 
   document.querySelector('[data-tab="audit"]')?.addEventListener("click", () => setTimeout(refreshAuditIntegrity, 0));
   document.querySelector('[data-tab="policy"]')?.addEventListener("click", () => setTimeout(refreshOpsStatus, 0));
+  document.querySelector('[data-tab="metrics"]')?.addEventListener("click", () => setTimeout(refreshLiveEvidence, 0));
   refreshOpsStatus();
   refreshAuditIntegrity();
+  refreshLiveEvidence();
 })();
