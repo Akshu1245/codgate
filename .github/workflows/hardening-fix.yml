@@ -1,0 +1,114 @@
+name: codgate-hardening-fix
+on:
+  push:
+    paths:
+      - .github/workflows/hardening-fix.yml
+permissions:
+  contents: write
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply reviewed QA fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/main.py')
+          s = p.read_text()
+          s = s.replace('from fastapi import FastAPI, HTTPException\n', 'from fastapi import FastAPI, HTTPException\nfrom pydantic import BaseModel, ConfigDict, Field\n')
+          anchor = 'app.mount("/static", StaticFiles(directory=STATIC), name="static")\n'
+          model = '''\n\nclass OrderPayload(BaseModel):\n    """HTTP-boundary validation only; decide() still receives a plain dict."""\n\n    model_config = ConfigDict(extra="ignore")\n\n    order_id: str | None = Field(default=None, max_length=160)\n    pincode: str | int | None = ""\n    address: str | None = ""\n    amount: float | int | None = 0\n    account_age_days: int = Field(default=0, ge=0)\n    prepaid_orders: int = Field(default=0, ge=0)\n    prior_rto_count: int = Field(default=0, ge=0)\n    orders_count: int = Field(default=0, ge=0)\n    phone: str | int | None = ""\n    customer_name: str | None = ""\n'''
+          if 'class OrderPayload(BaseModel):' not in s:
+              s = s.replace(anchor, anchor + model)
+          s = s.replace('def score_order(order: dict):\n    order = dict(order)\n    order.setdefault("order_id", f"ord_api_{int(datetime.now().timestamp())}")\n', 'def score_order(payload: OrderPayload):\n    order = payload.model_dump()\n    if not order.get("order_id"):\n        order["order_id"] = f"ord_api_{int(datetime.now().timestamp())}"\n')
+          p.write_text(s)
+
+          p = Path('app/payment.py')
+          s = p.read_text()
+          s = s.replace('import base64\nimport json\nimport os\n', 'import base64\nimport hashlib\nimport json\nimport os\nimport re\n')
+          old = '''def _simulated(order: dict, reason: str) -> PaymentLink:\n    link_id = f"plink_SIMULATED_{order['order_id']}"\n    return PaymentLink(\n        link_id=link_id,\n        url=f"/pay/{link_id}",\n        mode="simulated",\n        note=reason,\n    )\n'''
+          new = '''_UNSAFE_LINK_CHARS = re.compile(r"[^A-Za-z0-9_-]+")\n\n\ndef _safe_simulated_token(order_id: object) -> str:\n    """Keep canonical safe ids verbatim; harden arbitrary user-supplied ids for URLs."""\n    raw = str(order_id or "order")\n    cleaned = _UNSAFE_LINK_CHARS.sub("_", raw).strip("_") or "order"\n    cleaned = cleaned[:72]\n    if cleaned == raw and len(raw) <= 72:\n        return cleaned\n    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]\n    return f"{cleaned}_{digest}"\n\n\ndef _simulated(order: dict, reason: str) -> PaymentLink:\n    token = _safe_simulated_token(order.get("order_id"))\n    link_id = f"plink_SIMULATED_{token}"\n    return PaymentLink(\n        link_id=link_id,\n        url=f"/pay/{link_id}",\n        mode="simulated",\n        note=reason,\n    )\n'''
+          if '_safe_simulated_token' not in s:
+              if old not in s:
+                  raise SystemExit('payment block not found')
+              s = s.replace(old, new)
+          p.write_text(s)
+
+          p = Path('static/index.html')
+          s = p.read_text()
+          replacements = [
+              ('.kicker{font:500 10px/1.35 "IBM Plex Mono",monospace;letter-spacing:.15em;text-transform:uppercase;color:var(--subtle)}', '.kicker{font:500 10px/1.35 "IBM Plex Mono",monospace;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}'),
+              ('text-transform:uppercase;color:var(--subtle)}\n    .mast-main', 'text-transform:uppercase;color:var(--muted)}\n    .mast-main'),
+              ('.docket dt{color:var(--subtle);', '.docket dt{color:var(--muted);'),
+              ('.register-head{min-height:34px;color:var(--subtle);', '.register-head{min-height:34px;color:var(--muted);'),
+              ('.case-no{font:400 12px/1 "IBM Plex Mono",monospace;color:var(--subtle)}', '.case-no{font:400 12px/1 "IBM Plex Mono",monospace;color:var(--muted)}'),
+              ('font:400 10px/1.35 "IBM Plex Mono",monospace;color:var(--subtle)}.case-cues', 'font:400 10px/1.35 "IBM Plex Mono",monospace;color:var(--muted)}.case-cues'),
+              ('.workbar .route{font:400 10px/1.3 "IBM Plex Mono",monospace;color:var(--subtle)}', '.workbar .route{font:400 10px/1.3 "IBM Plex Mono",monospace;color:var(--muted)}'),
+              ('.sheet-ref{font:400 10px/1.35 "IBM Plex Mono",monospace;color:var(--subtle)}', '.sheet-ref{font:400 10px/1.35 "IBM Plex Mono",monospace;color:var(--muted)}'),
+              ('letter-spacing:.12em;color:var(--subtle);margin-bottom:5px}', 'letter-spacing:.12em;color:var(--muted);margin-bottom:5px}'),
+              ('letter-spacing:.12em;color:var(--subtle);background:var(--bg)}', 'letter-spacing:.12em;color:var(--muted);background:var(--bg)}'),
+              ('document.getElementById("copy-audit").addEventListener("click",async e=>{const r=await fetch("/audit.jsonl");const text=await r.text();await navigator.clipboard.writeText(text);e.currentTarget.textContent="Copied";setTimeout(()=>e.currentTarget.textContent="Copy JSONL",1200)});', 'document.getElementById("copy-audit").addEventListener("click",async e=>{const btn=e.currentTarget;const r=await fetch("/audit.jsonl");const text=await r.text();await navigator.clipboard.writeText(text);btn.textContent="Copied";setTimeout(()=>btn.textContent="Copy JSONL",1200)});'),
+          ]
+          for a, b in replacements:
+              s = s.replace(a, b)
+          p.write_text(s)
+
+          p = Path('static/pay.html')
+          s = p.read_text()
+          s = s.replace('text-transform:uppercase;color:var(--subtle)}', 'text-transform:uppercase;color:var(--muted)}')
+          s = s.replace('color:var(--subtle);font:400 9px/1.5', 'color:var(--muted);font:400 9px/1.5')
+          start = s.index('  const id=decodeURIComponent')
+          end = s.index('  render();', start) + len('  render();')
+          safe_js = '''  const id=decodeURIComponent(location.pathname.split("/").pop()||"");document.getElementById("id").textContent=id;\n  const key=`codgate:plink:${id}`;let link=null;try{link=JSON.parse(localStorage.getItem(key)||"null")}catch(e){}\n  const money=n=>"₹"+Number(n||0).toLocaleString("en-IN");const content=document.getElementById("content");\n  const node=(tag,className,text)=>{const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=String(text);return el};\n  function identity(){const parts=[];if(link?.customer_name)parts.push(String(link.customer_name));if(link?.order_id)parts.push(String(link.order_id));if(parts.length)content.appendChild(node("p","muted",parts.join(" · ")))}\n  function amount(){content.appendChild(node("div","amount",money(link?.amount)))}\n  async function state(){try{const r=await fetch(`/payment-links/${encodeURIComponent(id)}`);return await r.json()}catch(e){return {paid:Boolean(link?.paid)}}}\n  async function render(){\n    const s=await state();content.replaceChildren();\n    if(!link){content.appendChild(node("div","amount","—"));content.appendChild(node("p","muted","The id still looks simulated, but this link is not stored on this device. Nothing will be charged. Score the order again from Gate."));return;}\n    identity();amount();\n    if(s.paid||link.paid){content.appendChild(node("div","paid","PAYMENT RECORDED · COD WILL NOT BE COLLECTED"));return;}\n    const note=node("p","muted");note.append("COD was blocked. This is ");const sim=node("span","","plink_SIMULATED");sim.style.fontFamily="'IBM Plex Mono',monospace";note.append(sim,"; nothing is charged unless a Razorpay test link was issued from the Gate.");content.appendChild(note);\n    const pay=node("button","btn",`Pay ${money(link.amount)}`);pay.id="pay";pay.type="button";content.appendChild(pay);\n    pay.addEventListener("click",async()=>{const r=await fetch(`/payment-links/${encodeURIComponent(id)}/paid`,{method:"POST"});if(r.ok){link.paid=true;localStorage.setItem(key,JSON.stringify(link));render()}});\n  }\n  render();'''
+          s = s[:start] + safe_js + s[end:]
+          p.write_text(s)
+          PY
+      - name: Verify core and hardening
+        shell: bash
+        run: |
+          pip install -r requirements.txt
+          pytest -q
+          python -m app.score | tee /tmp/score.txt
+          grep -F 'Precision 74.2%' /tmp/score.txt
+          grep -F 'Recall    60.5%' /tmp/score.txt
+          grep -F 'SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a' /tmp/score.txt
+          python - <<'PY'
+          from pathlib import Path
+          from pydantic import ValidationError
+          from app.main import OrderPayload
+          from app.payment import _simulated
+          try:
+              OrderPayload(amount='abc')
+              raise SystemExit('malformed amount was accepted')
+          except ValidationError:
+              pass
+          try:
+              OrderPayload(orders_count=-1)
+              raise SystemExit('negative history was accepted')
+          except ValidationError:
+              pass
+          canonical = _simulated({'order_id':'ord_siwan_temple_01'}, 'qa')
+          assert canonical.link_id == 'plink_SIMULATED_ord_siwan_temple_01'
+          unsafe = _simulated({'order_id':'qa/slash?id=1'}, 'qa')
+          assert '/' not in unsafe.link_id and '?' not in unsafe.link_id
+          pay = Path('static/pay.html').read_text()
+          assert 'content.replaceChildren()' in pay
+          assert '${link.customer_name' not in pay
+          desk = Path('static/index.html').read_text()
+          assert 'const btn=e.currentTarget;const r=await fetch("/audit.jsonl")' in desk
+          PY
+      - name: Commit hardened CodGate
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/hardening-fix.yml
+          git add app/main.py app/payment.py static/index.html static/pay.html
+          git commit -m 'Harden CodGate after QA review'
+          git push
