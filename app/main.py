@@ -1,4 +1,4 @@
-"""CodGate HTTP desk: score, enforce, receipt, audit, metrics and static UI."""
+"""CodGate HTTP desk: score, enforce, receipt, audit, outcomes and metrics."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse, HTMLResponse
@@ -31,11 +32,19 @@ from .ops import (
 )
 from .payment import issue_payment_link
 from .policy import decide
-from .score import CSV_PATH, HELDOUT_SHA256, evaluate, frozen_block
+from .score import (
+    CSV_PATH,
+    FALSE_BLOCK_INR,
+    HELDOUT_SHA256,
+    MISSED_RTO_INR,
+    evaluate,
+    frozen_block,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 AUDIT = ROOT / "audit.jsonl"
+OUTCOMES = ROOT / "outcomes.jsonl"
 PAYMENT_EVENTS = ROOT / "payment_events.jsonl"
 IDEMPOTENCY_PATH = IDEMPOTENCY
 
@@ -70,6 +79,16 @@ class OrderPayload(BaseModel):
     customer_name: str | None = ""
 
 
+class OutcomePayload(BaseModel):
+    """Observed fulfilment outcome; stored separately from the frozen benchmark."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    outcome: Literal["DELIVERED", "RTO"]
+    source: str | None = Field(default="courier", max_length=60)
+    note: str | None = Field(default=None, max_length=280)
+
+
 def _append_jsonl(path: Path, entry: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -86,6 +105,20 @@ def _payment_paid(link_id: str) -> bool:
 
 def _known_payment_link(link_id: str) -> bool:
     return any(row.get("payment_link") == link_id for row in read_jsonl(AUDIT))
+
+
+def _latest_decision(order_id: str) -> dict | None:
+    for row in reversed(read_jsonl(AUDIT)):
+        if row.get("order_id") == order_id and row.get("decision") in {"ALLOW_COD", "FORCE_PREPAID", "STOP"}:
+            return row
+    return None
+
+
+def _latest_outcome(order_id: str) -> dict | None:
+    for row in reversed(read_jsonl(OUTCOMES)):
+        if row.get("order_id") == order_id and row.get("outcome") in {"DELIVERED", "RTO"}:
+            return row
+    return None
 
 
 def _payment_provider_status() -> dict:
@@ -143,6 +176,72 @@ def _response_payload(
     }
 
 
+def _live_metrics() -> dict:
+    latest_decisions: dict[str, dict] = {}
+    for row in read_jsonl(AUDIT):
+        order_id = str(row.get("order_id") or "")
+        if order_id and row.get("decision") in {"ALLOW_COD", "FORCE_PREPAID", "STOP"}:
+            latest_decisions[order_id] = row
+
+    latest_outcomes: dict[str, dict] = {}
+    for row in read_jsonl(OUTCOMES):
+        order_id = str(row.get("order_id") or "")
+        if order_id and row.get("outcome") in {"DELIVERED", "RTO"}:
+            latest_outcomes[order_id] = row
+
+    eligible = {order_id: row for order_id, row in latest_decisions.items() if row.get("decision") != "STOP"}
+    matched = [(row, latest_outcomes[order_id]) for order_id, row in eligible.items() if order_id in latest_outcomes]
+
+    tp = fp = fn = tn = 0
+    for decision, outcome in matched:
+        predicted = decision.get("decision") == "FORCE_PREPAID"
+        actual = outcome.get("outcome") == "RTO"
+        if predicted and actual:
+            tp += 1
+        elif predicted and not actual:
+            fp += 1
+        elif not predicted and actual:
+            fn += 1
+        else:
+            tn += 1
+
+    precision = None if tp + fp == 0 else tp / (tp + fp)
+    recall = None if tp + fn == 0 else tp / (tp + fn)
+
+    paid_links = {
+        str(row.get("payment_link"))
+        for row in read_jsonl(PAYMENT_EVENTS)
+        if row.get("event") == "paid" and row.get("payment_link")
+    }
+    enforced_forces = [
+        row
+        for row in eligible.values()
+        if row.get("decision") == "FORCE_PREPAID"
+        and row.get("execution_mode") == "enforce"
+        and row.get("payment_link")
+    ]
+    prepaid_paid = sum(1 for row in enforced_forces if str(row.get("payment_link")) in paid_links)
+
+    return {
+        "eligible_decisions": len(eligible),
+        "observed_outcomes": len(matched),
+        "coverage": 0 if not eligible else len(matched) / len(eligible),
+        "precision": precision,
+        "recall": recall,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "tn": tn,
+        "false_block_inr": fp * FALSE_BLOCK_INR,
+        "missed_rto_inr": fn * MISSED_RTO_INR,
+        "shadow_decisions": sum(1 for row in eligible.values() if row.get("execution_mode") == "shadow"),
+        "enforced_force_prepaid": len(enforced_forces),
+        "prepaid_paid": prepaid_paid,
+        "prepaid_conversion_rate": None if not enforced_forces else prepaid_paid / len(enforced_forces),
+        "note": "Observed-outcome metrics are separate from the frozen held-out benchmark and never edit its labels.",
+    }
+
+
 @app.get("/", include_in_schema=False)
 def desk():
     """Inject a tiny operational overlay without creating a second frontend policy."""
@@ -172,7 +271,8 @@ def health():
 def ready(response: Response):
     report = evaluate()
     audit = verify_audit_chain(AUDIT)
-    is_ready = bool(report["sha_matches"] and audit["verified"])
+    outcomes = verify_audit_chain(OUTCOMES)
+    is_ready = bool(report["sha_matches"] and audit["verified"] and outcomes["verified"])
     if not is_ready:
         response.status_code = 503
     return {
@@ -180,6 +280,7 @@ def ready(response: Response):
         "heldout_sha_matches": report["sha_matches"],
         "audit_chain_verified": audit["verified"],
         "audit_coverage": audit["coverage"],
+        "outcome_chain_verified": outcomes["verified"],
         "payment_provider": _payment_provider_status()["mode"],
     }
 
@@ -198,8 +299,9 @@ def policy_provenance():
 def ops_status():
     report = evaluate()
     audit = verify_audit_chain(AUDIT)
+    outcomes = verify_audit_chain(OUTCOMES)
     return {
-        "ready": bool(report["sha_matches"] and audit["verified"]),
+        "ready": bool(report["sha_matches"] and audit["verified"] and outcomes["verified"]),
         "execution_mode_default": default_execution_mode(),
         "rollout_modes": ["shadow", "enforce"],
         "idempotency_header": "Idempotency-Key",
@@ -207,6 +309,8 @@ def ops_status():
         "payment_provider": _payment_provider_status(),
         "policy": {**policy_manifest(), "heldout_sha256": HELDOUT_SHA256},
         "audit": audit,
+        "outcomes": outcomes,
+        "live_metrics": _live_metrics(),
     }
 
 
@@ -318,6 +422,51 @@ def score_order(
     return response_payload
 
 
+@app.post("/orders/{order_id}/outcome")
+def record_outcome(order_id: str, payload: OutcomePayload):
+    decision = _latest_decision(order_id)
+    if decision is None:
+        raise HTTPException(status_code=404, detail="No CodGate decision exists for this order_id.")
+
+    existing = _latest_outcome(order_id)
+    if existing is not None:
+        if existing.get("outcome") == payload.outcome:
+            return {**existing, "idempotent_replay": True}
+        raise HTTPException(status_code=409, detail="This order already has a different observed outcome.")
+
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event": "outcome",
+        "order_id": order_id,
+        "receipt_id": decision.get("receipt_id"),
+        "policy_version": decision.get("policy_version"),
+        "decision": decision.get("decision"),
+        "execution_mode": decision.get("execution_mode", "legacy"),
+        "outcome": payload.outcome,
+        "source": payload.source or "courier",
+        "note": payload.note,
+    }
+    chained = append_chained_audit(OUTCOMES, entry)
+    return {**chained, "idempotent_replay": False}
+
+
+@app.get("/outcomes")
+def read_outcomes():
+    return list(reversed(read_jsonl(OUTCOMES)))
+
+
+@app.get("/outcomes/verify")
+def verify_outcomes():
+    return verify_audit_chain(OUTCOMES)
+
+
+@app.get("/outcomes.jsonl")
+def download_outcomes():
+    if not OUTCOMES.exists():
+        OUTCOMES.touch()
+    return FileResponse(OUTCOMES, media_type="application/jsonl", filename="outcomes.jsonl")
+
+
 @app.get("/audit")
 def read_audit():
     return list(reversed(read_jsonl(AUDIT)))
@@ -344,6 +493,11 @@ def metrics():
         "frozen_block": frozen_block(report),
         "what_broke": WHAT_BROKE,
     }
+
+
+@app.get("/metrics/live")
+def live_metrics():
+    return _live_metrics()
 
 
 @app.get("/data/heldout.csv")
