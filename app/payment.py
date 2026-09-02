@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -18,8 +20,23 @@ class PaymentLink:
     note: str
 
 
+_UNSAFE_LINK_CHARS = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _safe_simulated_token(order_id: object) -> str:
+    """Keep canonical safe ids verbatim; harden arbitrary user-supplied ids for URLs."""
+    raw = str(order_id or "order")
+    cleaned = _UNSAFE_LINK_CHARS.sub("_", raw).strip("_") or "order"
+    cleaned = cleaned[:72]
+    if cleaned == raw and len(raw) <= 72:
+        return cleaned
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+    return f"{cleaned}_{digest}"
+
+
 def _simulated(order: dict, reason: str) -> PaymentLink:
-    link_id = f"plink_SIMULATED_{order['order_id']}"
+    token = _safe_simulated_token(order.get("order_id"))
+    link_id = f"plink_SIMULATED_{token}"
     return PaymentLink(
         link_id=link_id,
         url=f"/pay/{link_id}",

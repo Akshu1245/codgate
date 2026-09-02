@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -28,6 +29,23 @@ WHAT_BROKE = [
 
 app = FastAPI(title="CodGate", version="v1.0")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+class OrderPayload(BaseModel):
+    """HTTP-boundary validation only; decide() still receives a plain dict."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    order_id: str | None = Field(default=None, max_length=160)
+    pincode: str | int | None = ""
+    address: str | None = ""
+    amount: float | int | None = 0
+    account_age_days: int = Field(default=0, ge=0)
+    prepaid_orders: int = Field(default=0, ge=0)
+    prior_rto_count: int = Field(default=0, ge=0)
+    orders_count: int = Field(default=0, ge=0)
+    phone: str | int | None = ""
+    customer_name: str | None = ""
 
 
 def _append_jsonl(path: Path, entry: dict) -> None:
@@ -77,9 +95,10 @@ def cases():
 
 
 @app.post("/orders/score")
-def score_order(order: dict):
-    order = dict(order)
-    order.setdefault("order_id", f"ord_api_{int(datetime.now().timestamp())}")
+def score_order(payload: OrderPayload):
+    order = payload.model_dump()
+    if not order.get("order_id"):
+        order["order_id"] = f"ord_api_{int(datetime.now().timestamp())}"
     result = decide(order)
 
     payment_link_url = None
