@@ -4,6 +4,8 @@ Magic Checkout already scores RTO. We expose the gate — named rules, frozen me
 
 One class: **will this COD RTO.** Policy v1.0 frozen 2026-09-02. `decide()` is a pure function: no network, no LLM. Submit as **AI Risk Manager**.
 
+Public repo: [Akshu1245/codgate](https://github.com/Akshu1245/codgate)
+
 ## Policy
 
 STOP short-circuits. Else additive points. FORCE_PREPAID at ≥ 50.
@@ -47,4 +49,30 @@ Confusion: TP 23 · FP 8 · FN 15 · TN 34.
 
 A new customer with a complete address on a high-RTO pin lands at 47 — under the frozen 50 cut — so Siwan with a real house number still ships COD (h42–h45, h80). Prepaid veterans on metro pins still RTO and we miss them (h13, h14); credits drive the score to zero. Prior RTO on a veteran phone is cancelled by C1–C4 (h71–h73). We over-block temple drops that happened to deliver (h25–h27, h34–h35) and a couple of short mid-pin addresses (h60, h62).
 
-Razorpay keys are not configured; FORCE_PREPAID writes `plink_SIMULATED`.
+Razorpay keys are not configured; FORCE_PREPAID writes `plink_SIMULATED`. `decide()` never issues a Payment Link — the HTTP handler does, after the stamp.
+
+## Run
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pytest -q
+python -m app.score
+uvicorn app.main:app --reload --port 8000
+```
+
+`pytest` is the three canonical cases. `python -m app.score` prints Precision, Recall, false-block ₹180, missed-RTO ₹250, and the frozen SHA-256. The desk at `/` is three buttons. `POST /orders/score` runs the gate and appends `audit.jsonl`.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `app/policy.py` | `decide()` — pure, no network, no LLM |
+| `app/features.py` | address / pin / customer points |
+| `app/pincodes.py` | frozen pin table |
+| `app/cases.py` | three canonical orders |
+| `app/main.py` | `POST /orders/score` + desk |
+| `app/score.py` | `python -m app.score` |
+| `tests/test_policy.py` | ALLOW / FORCE / STOP |
+| `data/heldout.csv` | n=80, labels frozen |
+| `static/index.html` | three buttons |
