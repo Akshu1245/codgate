@@ -5,6 +5,8 @@ __pycache__/
 venv/
 .env
 payment_events.jsonl
+outcomes.jsonl
+idempotency.jsonl
 *.egg-info/
 .coverage
 htmlcov/
