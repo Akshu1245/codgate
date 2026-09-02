@@ -16,6 +16,7 @@ def _case(case_id: str) -> dict:
 
 def _isolate_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "AUDIT", tmp_path / "audit.jsonl")
+    monkeypatch.setattr(main, "OUTCOMES", tmp_path / "outcomes.jsonl")
     monkeypatch.setattr(main, "PAYMENT_EVENTS", tmp_path / "payment_events.jsonl")
     monkeypatch.setattr(main, "IDEMPOTENCY_PATH", tmp_path / "idempotency.jsonl")
     monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
@@ -78,6 +79,48 @@ def test_enforce_issues_known_simulated_link_and_rejects_forged_one(monkeypatch,
 
     forged = client.post("/payment-links/plink_SIMULATED_never_issued/paid")
     assert forged.status_code == 404
+
+
+def test_observed_outcomes_feed_live_metrics_without_touching_frozen_set(monkeypatch, tmp_path):
+    _isolate_runtime(monkeypatch, tmp_path)
+    headers = {"X-CodGate-Mode": "shadow"}
+
+    force = client.post("/orders/score", json=_case("force"), headers=headers)
+    allow = client.post("/orders/score", json=_case("allow"), headers=headers)
+    assert force.status_code == 200
+    assert allow.status_code == 200
+
+    force_outcome = client.post("/orders/ord_siwan_temple_01/outcome", json={"outcome": "RTO", "source": "qa"})
+    allow_outcome = client.post("/orders/ord_blr_vet_01/outcome", json={"outcome": "RTO", "source": "qa"})
+    assert force_outcome.status_code == 200
+    assert allow_outcome.status_code == 200
+
+    replay = client.post("/orders/ord_siwan_temple_01/outcome", json={"outcome": "RTO", "source": "qa"})
+    assert replay.status_code == 200
+    assert replay.json()["idempotent_replay"] is True
+
+    conflict = client.post("/orders/ord_siwan_temple_01/outcome", json={"outcome": "DELIVERED", "source": "qa"})
+    assert conflict.status_code == 409
+
+    report = client.get("/metrics/live")
+    assert report.status_code == 200
+    body = report.json()
+    assert body["eligible_decisions"] == 2
+    assert body["observed_outcomes"] == 2
+    assert body["coverage"] == 1.0
+    assert body["tp"] == 1
+    assert body["fn"] == 1
+    assert body["fp"] == 0
+    assert body["tn"] == 0
+    assert body["precision"] == 1.0
+    assert body["recall"] == 0.5
+    assert body["missed_rto_inr"] == 250
+    assert body["shadow_decisions"] == 2
+
+    outcome_chain = client.get("/outcomes/verify")
+    assert outcome_chain.status_code == 200
+    assert outcome_chain.json()["verified"] is True
+    assert outcome_chain.json()["hashed_rows"] == 2
 
 
 def test_audit_hash_chain_detects_tampering(tmp_path):
