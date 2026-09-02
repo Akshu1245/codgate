@@ -1,208 +1,202 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CodGate</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif&display=swap"
-      rel="stylesheet"
-    />
-    <style>
-      :root {
-        --bg: #0c0d0b;
-        --surface: #151611;
-        --elevated: #1c1e17;
-        --fg: #eceae3;
-        --muted: #9a978c;
-        --subtle: #6e6c64;
-        --border: #2a2c24;
-        --allow: #8fad86;
-        --force: #d4b896;
-        --stop: #c17a6a;
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; background: var(--bg); color: var(--fg); }
-      body {
-        font-family: "IBM Plex Sans", system-ui, sans-serif;
-        line-height: 1.5;
-        min-height: 100dvh;
-      }
-      header, main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1.25rem; }
-      header { border-bottom: 1px solid var(--border); }
-      .kicker {
-        font-family: "IBM Plex Mono", ui-monospace, monospace;
-        font-size: 0.6875rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-      h1 {
-        font-family: "Instrument Serif", Georgia, serif;
-        font-size: 3rem;
-        font-weight: 400;
-        letter-spacing: -0.03em;
-        line-height: 1;
-        margin: 0.4rem 0 0;
-      }
-      .pitch { color: var(--muted); max-width: 36rem; }
-      .row {
-        display: grid;
-        gap: 0.5rem;
-        margin: 1.5rem 0;
-      }
-      @media (min-width: 640px) { .row { grid-template-columns: 1fr 1fr 1fr; } }
-      button {
-        text-align: left;
-        background: var(--surface);
-        color: var(--fg);
-        border: 1px solid rgba(232, 228, 216, 0.08);
-        border-radius: 12px;
-        padding: 1rem;
-        cursor: pointer;
-        font: inherit;
-        min-height: 5.5rem;
-      }
-      button:hover { border-color: rgba(232, 228, 216, 0.14); background: var(--elevated); }
-      button .n { font-family: "IBM Plex Mono", monospace; font-size: 0.6875rem; color: var(--subtle); }
-      button .mark { font-family: "IBM Plex Mono", monospace; font-size: 0.6875rem; float: right; }
-      button h2 { font-size: 0.95rem; font-weight: 500; margin: 0.6rem 0 0.15rem; }
-      button p { margin: 0; color: var(--muted); font-size: 0.85rem; }
-      .allow { color: var(--allow); }
-      .force { color: var(--force); }
-      .stop { color: var(--stop); }
-      .card {
-        background: var(--surface);
-        border: 1px solid rgba(232, 228, 216, 0.08);
-        border-radius: 16px;
-        padding: 1.25rem 1.5rem;
-      }
-      .stamp {
-        font-family: "Instrument Serif", Georgia, serif;
-        font-size: 2.4rem;
-        letter-spacing: -0.03em;
-        margin: 0.4rem 0 0.6rem;
-      }
-      pre {
-        font-family: "IBM Plex Mono", ui-monospace, monospace;
-        font-size: 0.75rem;
-        white-space: pre-wrap;
-        word-break: break-word;
-        color: var(--fg);
-        margin: 0.75rem 0 0;
-      }
-      .meta { color: var(--muted); font-size: 0.85rem; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <p class="kicker">Track 02 · will this COD RTO</p>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0c0d0b" />
+  <title>CodGate · AI Risk Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <style>
+    :root{
+      --bg:#0c0d0b;--surface:#151611;--elevated:#1c1e17;--fg:#eceae3;--muted:#9a978c;--subtle:#6e6c64;--border:#2a2c24;--accent:#e8e4d8;--accent-fg:#0c0d0b;--allow:#8fad86;--force:#d4b896;--stop:#c17a6a;
+      --line:0 0 0 1px rgba(232,228,216,.08);--line-hover:0 0 0 1px rgba(232,228,216,.14)
+    }
+    *{box-sizing:border-box}html{background:var(--bg);color:var(--fg);scrollbar-gutter:stable}body{margin:0;min-height:100dvh;font-family:"IBM Plex Sans",system-ui,sans-serif;background:var(--bg);color:var(--fg);line-height:1.5}button,input,textarea{font:inherit}button,a{touch-action:manipulation}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}a{color:inherit}.wrap{width:min(100% - 32px,1120px);margin:auto}.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}.serif{font-family:"Instrument Serif",Georgia,serif}.kicker{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}.muted{color:var(--muted)}.subtle{color:var(--subtle)}.hair{box-shadow:var(--line)}
+    header{border-bottom:1px solid var(--border);background:rgba(12,13,11,.94);position:sticky;top:0;z-index:20}header .bar{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:18px 0 14px}.brand h1{font:400 clamp(38px,6vw,54px)/.92 "Instrument Serif",Georgia,serif;letter-spacing:-.035em;margin:4px 0 0}.freeze{font:400 11px/1.5 "IBM Plex Mono",monospace;color:var(--subtle);margin-bottom:3px}.nav{display:flex;gap:4px;overflow:auto;padding-bottom:2px}.tab{min-height:44px;border:0;border-radius:9px;background:transparent;color:var(--muted);padding:0 15px;transition:opacity 180ms,transform 180ms,background 180ms,color 180ms;white-space:nowrap}.tab:hover{background:var(--elevated);color:var(--fg)}.tab.active{background:var(--accent);color:var(--accent-fg)}
+    main{padding:28px 0 56px}.surface{display:none}.surface.active{display:block}.pitch{max-width:760px;color:var(--muted);font-size:14px;margin:0 0 18px}.deskline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.btn{min-height:44px;border:0;border-radius:9px;padding:0 14px;background:var(--accent);color:var(--accent-fg);font-weight:600;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:opacity 180ms,transform 180ms}.btn:hover{transform:translateY(-1px)}.btn.secondary{background:var(--elevated);color:var(--fg);box-shadow:var(--line)}.btn.quiet{background:transparent;color:var(--muted);box-shadow:var(--line)}.btn.force{background:var(--force);color:var(--accent-fg)}
+    .cases{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.case{min-height:112px;text-align:left;border:0;border-radius:16px;padding:15px;background:var(--surface);color:var(--fg);box-shadow:var(--line);transition:opacity 180ms,transform 180ms,box-shadow 180ms}.case:hover{transform:translateY(-2px);box-shadow:var(--line-hover)}.case .top{display:flex;justify-content:space-between;gap:10px}.case h3{font-size:15px;margin:17px 0 2px;font-weight:500}.case p{font-size:13px;color:var(--muted);margin:0}.allow{color:var(--allow)}.force-t{color:var(--force)}.stop{color:var(--stop)}
+    .gategrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px;align-items:start}.card{background:var(--surface);border-radius:18px;padding:20px;box-shadow:var(--line)}.card h2{font:400 28px/1 "Instrument Serif",Georgia,serif;letter-spacing:-.025em;margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.field.full{grid-column:1/-1}.field label{display:block;font:400 10px/1.4 "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--subtle);margin:0 0 6px}.field input,.field textarea{width:100%;min-height:44px;border:1px solid var(--border);border-radius:9px;background:var(--bg);color:var(--fg);padding:10px 11px;outline:none}.field textarea{min-height:80px;resize:vertical}.field input:focus,.field textarea:focus{border-color:var(--accent)}.formactions{display:flex;gap:8px;align-items:center;margin-top:16px}.status{font-size:12px;color:var(--muted)}
+    .stampbox{min-height:272px;display:flex;align-items:center;justify-content:center;padding:16px}.stamp{width:min(100%,360px);border:3px solid currentColor;border-radius:11px;padding:7px;transform:rotate(-4deg);animation:stampin 220ms ease-out both}.stampinner{border:1px dashed currentColor;border-radius:5px;padding:22px 14px;text-align:center}.stampmark{font:400 clamp(36px,8vw,54px)/.9 "Instrument Serif",Georgia,serif;letter-spacing:-.035em;margin:8px 0}.stampmeta{font:400 12px/1.5 "IBM Plex Mono",monospace}.waiting{max-width:390px;text-align:center}.waiting .big{font:400 32px/1.05 "Instrument Serif",Georgia,serif;letter-spacing:-.025em;margin:12px 0}.rules{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.chip{font:400 11px/1 "IBM Plex Mono",monospace;border-radius:8px;padding:8px 9px;background:var(--elevated);box-shadow:var(--line)}.plink{margin-top:14px;padding:14px;background:var(--elevated);border-radius:12px;box-shadow:var(--line)}.plinkid{font:400 12px/1.5 "IBM Plex Mono",monospace;word-break:break-all}.plinkactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}.note{font-size:12px;color:var(--muted);margin:8px 0 0}.featuredetails{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}.featuredetails summary{cursor:pointer;color:var(--muted);font-size:12px}.featuredetails pre{white-space:pre-wrap;overflow-wrap:anywhere;font:400 11px/1.55 "IBM Plex Mono",monospace;color:var(--muted)}
+    .sectionhead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:16px}.sectionhead h2{font:400 clamp(34px,5vw,46px)/.95 "Instrument Serif",Georgia,serif;letter-spacing:-.03em;margin:0}.sectionhead p{margin:5px 0 0;color:var(--muted);font-size:13px}.tablecard{border-radius:18px;background:var(--surface);box-shadow:var(--line);overflow:hidden}.tablewrap{overflow:auto}.policytable,.audittable{width:100%;border-collapse:collapse;text-align:left;min-width:760px}.policytable th,.policytable td,.audittable th,.audittable td{border-bottom:1px solid var(--border);padding:12px 14px;vertical-align:top}.policytable th,.audittable th{font:500 10px/1.3 "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--subtle)}.policytable td{font-size:13px}.policytable td:first-child,.policytable td:nth-child(3),.audittable td{font-family:"IBM Plex Mono",monospace;font-size:11px}.policytable tr:last-child td,.audittable tr:last-child td{border-bottom:0}
+    .metricgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.metric{padding:17px;border-radius:16px;background:var(--surface);box-shadow:var(--line)}.metric .v{font:400 31px/1 "Instrument Serif",Georgia,serif;letter-spacing:-.025em;margin-top:8px}.metric .s{font:400 11px/1.5 "IBM Plex Mono",monospace;color:var(--muted);margin-top:5px}.confusion{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-radius:14px;overflow:hidden;margin-top:10px}.confusion div{background:var(--surface);padding:14px;text-align:center}.confusion b{display:block;font:400 25px/1 "Instrument Serif",Georgia,serif}.confusion span{font:400 10px/1.5 "IBM Plex Mono",monospace;color:var(--subtle)}.metricrow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:18px;margin-top:18px}.sha{word-break:break-all;font:400 11px/1.6 "IBM Plex Mono",monospace;color:var(--muted);margin:10px 0}.broken{margin:12px 0 0;padding-left:20px}.broken li{margin:8px 0;color:var(--muted);font-size:13px}.tape{width:100%;margin-top:14px;border-radius:12px;background:var(--bg);box-shadow:var(--line)}
+    .auditactions{display:flex;gap:8px;flex-wrap:wrap}.empty{padding:48px 20px;text-align:center;color:var(--muted);font-size:13px}.auditdecision{font-family:"IBM Plex Mono",monospace}.nowrap{white-space:nowrap}
+    @keyframes stampin{from{opacity:0;transform:rotate(-4deg) scale(.96)}to{opacity:1;transform:rotate(-4deg) scale(1)}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.stamp{animation:none}.btn,.tab,.case{transition:none}}
+    @media(max-width:820px){header .bar{align-items:flex-start;flex-direction:column}.freeze{display:none}.gategrid,.metricrow{grid-template-columns:1fr}.resultcard{grid-row:1}.metricgrid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:560px){.wrap{width:min(100% - 24px,1120px)}main{padding-top:20px}.cases{grid-template-columns:1fr}.case{min-height:92px}.formgrid{grid-template-columns:1fr}.field.full{grid-column:auto}.metricgrid{grid-template-columns:1fr 1fr}.deskline,.sectionhead{align-items:flex-start;flex-direction:column}.stampbox{min-height:235px}.card{padding:16px}.nav{width:100%}.tab{flex:1;padding:0 11px}.confusion div{padding:11px 5px}.confusion b{font-size:21px}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="brand">
+      <div class="kicker">Track 02 · will this COD RTO</div>
       <h1>CodGate</h1>
-      <p class="pitch">
-        Magic Checkout already scores RTO. We expose the gate — named rules,
-        frozen metrics, Payment Link when we block COD.
-      </p>
-    </header>
-    <main>
-      <p class="kicker">Three buttons · POST /orders/score</p>
-      <div class="row">
-        <button type="button" data-case="allow">
-          <span class="n">01</span>
-          <span class="mark allow">ALLOW_COD</span>
-          <h2>Allow</h2>
-          <p>Indiranagar veteran</p>
-        </button>
-        <button type="button" data-case="force">
-          <span class="n">02</span>
-          <span class="mark force">FORCE_PREPAID</span>
-          <h2>Block + link</h2>
-          <p>Siwan temple drop</p>
-        </button>
-        <button type="button" data-case="stop">
-          <span class="n">03</span>
-          <span class="mark stop">STOP</span>
-          <h2>Stop</h2>
-          <p>pincode 56</p>
-        </button>
+    </div>
+    <div class="freeze">AI Risk Manager<br>v1.0 · frozen 2026-09-02</div>
+    <nav class="nav" aria-label="CodGate surfaces">
+      <button class="tab active" data-tab="gate">Gate</button>
+      <button class="tab" data-tab="policy">Policy</button>
+      <button class="tab" data-tab="metrics">Metrics</button>
+      <button class="tab" data-tab="audit">Audit</button>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+  <section id="gate" class="surface active">
+    <p class="pitch">Magic Checkout already scores RTO. We expose the gate — named rules, frozen metrics, Payment Link when we block COD.</p>
+    <div class="deskline">
+      <div class="kicker">Three canonical orders · same Python policy</div>
+      <button id="play-tape" class="btn secondary" type="button">Play the tape</button>
+    </div>
+    <div class="cases">
+      <button class="case" data-case="allow" type="button"><div class="top"><span class="kicker">01</span><span class="kicker allow">ALLOW_COD</span></div><h3>Indiranagar veteran</h3><p>Complete address · prepaid history · low pin</p></button>
+      <button class="case" data-case="force" type="button"><div class="top"><span class="kicker">02</span><span class="kicker force-t">FORCE_PREPAID</span></div><h3>Siwan temple drop</h3><p>₹3,499 · new · prior RTO on phone</p></button>
+      <button class="case" data-case="stop" type="button"><div class="top"><span class="kicker">03</span><span class="kicker stop">STOP</span></div><h3>Pincode “56”</h3><p>R1 short-circuits before scoring</p></button>
+    </div>
+
+    <div class="gategrid">
+      <div class="card formcard">
+        <div class="kicker">Custom order</div>
+        <h2>Score the COD gate</h2>
+        <form id="order-form">
+          <div class="formgrid">
+            <div class="field"><label for="order_id">Order id</label><input id="order_id" name="order_id" value="ord_manual_01" /></div>
+            <div class="field"><label for="customer_name">Customer name</label><input id="customer_name" name="customer_name" value="Meera Shah" /></div>
+            <div class="field"><label for="pincode">Pincode</label><input id="pincode" name="pincode" inputmode="numeric" value="560034" /></div>
+            <div class="field"><label for="amount">Amount ₹</label><input id="amount" name="amount" type="number" min="0" step="1" value="1299" /></div>
+            <div class="field full"><label for="address">Address</label><textarea id="address" name="address">Flat 4A, 22 5th Block, Koramangala</textarea></div>
+            <div class="field"><label for="account_age_days">Account age days</label><input id="account_age_days" name="account_age_days" type="number" min="0" value="220" /></div>
+            <div class="field"><label for="orders_count">Orders count</label><input id="orders_count" name="orders_count" type="number" min="0" value="8" /></div>
+            <div class="field"><label for="prepaid_orders">Prepaid orders</label><input id="prepaid_orders" name="prepaid_orders" type="number" min="0" value="4" /></div>
+            <div class="field"><label for="prior_rto_count">Prior RTO count</label><input id="prior_rto_count" name="prior_rto_count" type="number" min="0" value="0" /></div>
+            <div class="field full"><label for="phone">Phone</label><input id="phone" name="phone" inputmode="tel" value="9876501234" /></div>
+          </div>
+          <div class="formactions"><button class="btn" type="submit">Score order</button><span id="form-status" class="status">POST /orders/score</span></div>
+        </form>
       </div>
-      <div class="card" id="out">
-        <p class="kicker">Awaiting an order</p>
-        <p class="meta">decide() is pure. The handler issues plink_SIMULATED on FORCE_PREPAID and appends audit.jsonl.</p>
+      <div class="card resultcard" id="result-card" aria-live="polite">
+        <div class="stampbox"><div class="waiting"><div class="kicker">Awaiting an order</div><div class="big">Named rules. Frozen metrics. Payment Link when COD is blocked.</div><div class="muted" style="font-size:13px">Run one of the three cases or score the form.</div></div></div>
       </div>
-    </main>
-    <script>
-      const CASES = {
-        allow: {
-          order_id: "ord_blr_vet_01",
-          pincode: "560038",
-          address: "Flat 12B, 4th Floor, 18 12th Main, HAL 2nd Stage, Indiranagar",
-          amount: 899,
-          account_age_days: 640,
-          prepaid_orders: 11,
-          prior_rto_count: 0,
-          orders_count: 24,
-          phone: "9876543210",
-          customer_name: "Ananya Rao",
-        },
-        force: {
-          order_id: "ord_siwan_temple_01",
-          pincode: "841226",
-          address: "near temple",
-          amount: 3499,
-          account_age_days: 2,
-          prepaid_orders: 0,
-          prior_rto_count: 2,
-          orders_count: 0,
-          phone: "9123456780",
-          customer_name: "Ravi Kumar",
-        },
-        stop: {
-          order_id: "ord_bad_pin_01",
-          pincode: "56",
-          address: "12 MG Road, Shivajinagar",
-          amount: 499,
-          account_age_days: 90,
-          prepaid_orders: 1,
-          prior_rto_count: 0,
-          orders_count: 3,
-          phone: "9000000000",
-          customer_name: "Test Drop",
-        },
-      };
-      const TONE = {
-        ALLOW_COD: { cls: "allow", mark: "ALLOW COD" },
-        FORCE_PREPAID: { cls: "force", mark: "FORCE PREPAID" },
-        STOP: { cls: "stop", mark: "STOP" },
-      };
-      const out = document.getElementById("out");
-      document.querySelectorAll("[data-case]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const order = CASES[btn.dataset.case];
-          out.innerHTML = '<p class="kicker">Scoring…</p>';
-          const res = await fetch("/orders/score", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(order),
-          });
-          const data = await res.json();
-          const tone = TONE[data.decision] || TONE.STOP;
-          const rules = (data.rules || [])
-            .map((r) => r.id + (r.points > 0 ? " +" + r.points : " " + r.points))
-            .join(" · ");
-          const link = data.payment_link
-            ? `<p class="meta">Payment Link <code>${data.payment_link}</code></p>`
-            : "";
-          out.innerHTML = `
-            <p class="kicker">${data.policy_version} · ${data.points} / ${data.threshold} pts</p>
-            <p class="stamp ${tone.cls}">${tone.mark}</p>
-            <p class="meta">${rules || "no additive rules"}</p>
-            ${link}
-            <pre>${JSON.stringify(data, null, 2)}</pre>
-          `;
-        });
-      });
-    </script>
-  </body>
+    </div>
+  </section>
+
+  <section id="policy" class="surface">
+    <div class="sectionhead"><div><div class="kicker">Policy v1.0 · frozen 2026-09-02</div><h2>Named rules, not a mystery score</h2><p>STOP short-circuits. Else additive points, floor 0. FORCE_PREPAID at 50.</p></div></div>
+    <div class="tablecard tablewrap">
+      <table class="policytable">
+        <thead><tr><th>ID</th><th>Rule</th><th>Pts</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td>R1</td><td>PINCODE_INVALID</td><td>STOP</td><td>Pincode is not 6 digits</td></tr>
+          <tr><td>R2</td><td>AMOUNT_INVALID</td><td>STOP</td><td>Amount ≤ 0</td></tr>
+          <tr><td>R3</td><td>ADDRESS_EMPTY</td><td>STOP</td><td>Address is empty</td></tr>
+          <tr><td>R4</td><td>LANDMARK_ONLY</td><td>+40</td><td>near/opp/beside temple, mandir, mosque, masjid, church, dargah or gurudwara; no house number</td></tr>
+          <tr><td>R5</td><td>HIGH_RTO_PIN</td><td>+25</td><td>Pin RTO ≥ 28%; frozen Bihar / east-UP / NE belt + known high pins</td></tr>
+          <tr><td>R6</td><td>NEW_CUSTOMER</td><td>+20</td><td>orders_count == 0 or account_age_days &lt; 21</td></tr>
+          <tr><td>R7</td><td>HIGH_TICKET</td><td>+15</td><td>Amount ≥ ₹3,000</td></tr>
+          <tr><td>R8</td><td>PRIOR_RTO_PHONE</td><td>+35</td><td>prior_rto_count ≥ 1</td></tr>
+          <tr><td>R9</td><td>NO_PREPAID_HISTORY</td><td>+10</td><td>prepaid_orders == 0</td></tr>
+          <tr><td>R10</td><td>SHORT_ADDRESS</td><td>+20</td><td>Address &lt; 12 chars, after landmark check</td></tr>
+          <tr><td>R11</td><td>MID_RTO_PIN</td><td>+10</td><td>Frozen mid pin band</td></tr>
+          <tr><td>R13</td><td>PARTIAL_ADDRESS</td><td>+8</td><td>House or locality, not both / otherwise incomplete</td></tr>
+          <tr><td>C1</td><td>PREPAID_VETERAN</td><td>−15</td><td>prepaid_orders ≥ 3</td></tr>
+          <tr><td>C2</td><td>OLD_CUSTOMER</td><td>−10</td><td>account_age_days ≥ 180 and not new</td></tr>
+          <tr><td>C3</td><td>LOW_RTO_PIN</td><td>−10</td><td>Pin RTO ≤ 8%</td></tr>
+          <tr><td>C4</td><td>COMPLETE_ADDRESS</td><td>−8</td><td>House number AND street/locality</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="metrics" class="surface">
+    <div class="sectionhead"><div><div class="kicker">Held-out n=80 · labels frozen</div><h2>Precision and recall, in rupees</h2><p>Positive class = FORCE_PREPAID. STOP rows are skipped.</p></div><a class="btn secondary" href="/data/heldout.csv" download>Download heldout.csv</a></div>
+    <div class="metricgrid">
+      <div class="metric"><div class="kicker">Precision</div><div class="v" id="m-precision">—</div><div class="s">TP / (TP + FP)</div></div>
+      <div class="metric"><div class="kicker">Recall</div><div class="v" id="m-recall">—</div><div class="s">TP / (TP + FN)</div></div>
+      <div class="metric"><div class="kicker">False-block</div><div class="v" id="m-fp-cost">—</div><div class="s">₹180 × FP 8</div></div>
+      <div class="metric"><div class="kicker">Missed-RTO</div><div class="v" id="m-fn-cost">—</div><div class="s">₹250 × FN 15</div></div>
+    </div>
+    <div class="confusion"><div><b id="m-tp">—</b><span>TP</span></div><div><b id="m-fp">—</b><span>FP</span></div><div><b id="m-fn">—</b><span>FN</span></div><div><b id="m-tn">—</b><span>TN</span></div></div>
+    <div class="metricrow">
+      <div class="card"><div class="kicker">What broke</div><h2>Known misses and false blocks</h2><ul id="broken" class="broken"></ul></div>
+      <div class="card"><div class="kicker">Frozen file</div><h2>SHA-256</h2><div id="sha" class="sha">Loading…</div><div id="sha-state" class="status"></div><div style="margin-top:16px" class="kicker">5-minute tape</div><video class="tape" controls preload="metadata"><source src="/static/codgate-demo.mp4" type="video/mp4" /></video></div>
+    </div>
+  </section>
+
+  <section id="audit" class="surface">
+    <div class="sectionhead"><div><div class="kicker">Append-only</div><h2>audit.jsonl</h2><p>Newest first. Copy or download. There is no delete-all control.</p></div><div class="auditactions"><button class="btn secondary" id="copy-audit" type="button">Copy JSONL</button><a class="btn secondary" href="/audit.jsonl" download>Download</a></div></div>
+    <div class="tablecard" id="audit-card"><div class="empty">No decisions yet. Run a case on the Gate.</div></div>
+  </section>
+</main>
+<script>
+  const CASES={
+    allow:{order_id:"ord_blr_vet_01",pincode:"560038",address:"Flat 12B, 4th Floor, 18 12th Main, HAL 2nd Stage, Indiranagar",amount:899,account_age_days:640,prepaid_orders:11,prior_rto_count:0,orders_count:24,phone:"9876543210",customer_name:"Ananya Rao"},
+    force:{order_id:"ord_siwan_temple_01",pincode:"841226",address:"near temple",amount:3499,account_age_days:2,prepaid_orders:0,prior_rto_count:2,orders_count:0,phone:"9123456780",customer_name:"Ravi Kumar"},
+    stop:{order_id:"ord_bad_pin_01",pincode:"56",address:"12 MG Road, Shivajinagar",amount:499,account_age_days:90,prepaid_orders:1,prior_rto_count:0,orders_count:3,phone:"9000000000",customer_name:"Test Drop"}
+  };
+  const money=n=>"₹"+Number(n||0).toLocaleString("en-IN");
+  const esc=s=>String(s??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  let lastResult=null;
+
+  function showTab(name){
+    document.querySelectorAll(".surface").forEach(el=>el.classList.toggle("active",el.id===name));
+    document.querySelectorAll(".tab").forEach(el=>el.classList.toggle("active",el.dataset.tab===name));
+    if(name==="metrics") loadMetrics();
+    if(name==="audit") loadAudit();
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>showTab(btn.dataset.tab)));
+
+  function fillForm(order){
+    for(const [key,value] of Object.entries(order)){const el=document.getElementById(key);if(el)el.value=value;}
+  }
+
+  async function score(order){
+    const status=document.getElementById("form-status"); status.textContent="Scoring…";
+    const response=await fetch("/orders/score",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(order)});
+    if(!response.ok) throw new Error("score failed");
+    const data=await response.json(); lastResult=data; status.textContent=`${data.policy_version} · ${data.decision}`;
+    if(data.payment_link){
+      localStorage.setItem(`codgate:plink:${data.payment_link}`,JSON.stringify({id:data.payment_link,order_id:order.order_id,amount:order.amount,customer_name:order.customer_name||"",mode:data.payment_link_mode,note:data.payment_link_note,paid:false}));
+    }
+    renderResult(data); return data;
+  }
+
+  function renderResult(data){
+    const tones={ALLOW_COD:["allow","ALLOW COD","Cash on delivery stands"],FORCE_PREPAID:["force-t","FORCE PREPAID","COD blocked · collect now"],STOP:["stop","STOP","Order does not enter the gate"]};
+    const [tone,mark,kicker]=tones[data.decision];
+    const chips=(data.rules||[]).map(r=>`<span class="chip">${esc(r.id)} ${r.points>0?"+":""}${r.points}</span>`).join("");
+    const pay=data.payment_link?`<div class="plink"><div class="kicker force-t">Payment Link · ${esc(data.payment_link_mode)}</div><div class="plinkid">${esc(data.payment_link)}</div><p class="note">${esc(data.payment_link_note)}</p><div class="plinkactions"><a class="btn force" href="${esc(data.payment_link_url)}" ${data.payment_link_mode==="razorpay_test"?'target="_blank" rel="noreferrer"':''}>Open link</a><button class="btn quiet" id="copy-link" type="button">Copy id</button></div></div>`:"";
+    document.getElementById("result-card").innerHTML=`<div class="stampbox"><div class="stamp ${tone}"><div class="stampinner"><div class="kicker ${tone}">${esc(kicker)}</div><div class="stampmark">${esc(mark)}</div><div class="stampmeta">${data.decision==="STOP"?esc(data.rules[0]?.id||"STOP"):`${data.points} / ${data.threshold} pts`}</div></div></div></div><div class="kicker">Rules that fired</div><div class="rules">${chips||'<span class="chip">none</span>'}</div>${pay}<details class="featuredetails"><summary>Feature stamp</summary><pre>${esc(JSON.stringify(data.features,null,2))}</pre></details>`;
+    const copy=document.getElementById("copy-link"); if(copy) copy.addEventListener("click",async()=>{await navigator.clipboard.writeText(data.payment_link);copy.textContent="Copied";setTimeout(()=>copy.textContent="Copy id",1200)});
+  }
+
+  document.querySelectorAll("[data-case]").forEach(btn=>btn.addEventListener("click",async()=>{showTab("gate");fillForm(CASES[btn.dataset.case]);try{await score(CASES[btn.dataset.case])}catch(e){document.getElementById("form-status").textContent="Score failed"}}));
+
+  document.getElementById("order-form").addEventListener("submit",async e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget);const order=Object.fromEntries(fd.entries());
+    ["amount","account_age_days","prepaid_orders","prior_rto_count","orders_count"].forEach(k=>order[k]=Number(order[k]||0));
+    if(!order.order_id) order.order_id=`ord_manual_${Date.now()}`;
+    try{await score(order)}catch(err){document.getElementById("form-status").textContent="Score failed"}
+  });
+
+  document.getElementById("play-tape").addEventListener("click",async e=>{
+    const b=e.currentTarget;b.disabled=true;b.textContent="Playing…";showTab("gate");
+    for(const name of ["allow","force","stop"]){fillForm(CASES[name]);await score(CASES[name]);await wait(1200)}
+    showTab("metrics");b.disabled=false;b.textContent="Play the tape";
+  });
+
+  async function loadMetrics(){
+    try{const r=await fetch("/metrics");const m=await r.json();document.getElementById("m-precision").textContent=(m.precision*100).toFixed(1)+"%";document.getElementById("m-recall").textContent=(m.recall*100).toFixed(1)+"%";document.getElementById("m-fp-cost").textContent=money(m.false_block_inr);document.getElementById("m-fn-cost").textContent=money(m.missed_rto_inr);for(const k of ["tp","fp","fn","tn"])document.getElementById("m-"+k).textContent=m[k];document.getElementById("sha").textContent=m.sha256;document.getElementById("sha-state").textContent=m.sha_matches?"Frozen hash matches.":"WARN: held-out hash drifted — labels were edited.";document.getElementById("sha-state").className="status "+(m.sha_matches?"allow":"stop");document.getElementById("broken").innerHTML=m.what_broke.map(x=>`<li>${esc(x)}</li>`).join("");}catch(e){document.getElementById("sha-state").textContent="Metrics unavailable"}
+  }
+
+  async function loadAudit(){
+    try{const r=await fetch("/audit");const rows=await r.json();if(!rows.length){document.getElementById("audit-card").innerHTML='<div class="empty">No decisions yet. Run a case on the Gate.</div>';return;}const body=rows.map(x=>`<tr><td class="nowrap">${esc((x.ts||"").replace("T"," ").slice(0,19))}</td><td>${esc(x.order_id)}</td><td class="auditdecision ${x.decision==="ALLOW_COD"?"allow":x.decision==="STOP"?"stop":"force-t"}">${esc(x.decision)}</td><td>${esc(x.points)}</td><td>${esc((x.rules||[]).join(" "))}</td><td>${money(x.amount)}</td><td>${esc(x.payment_link||"—")}</td></tr>`).join("");document.getElementById("audit-card").innerHTML=`<div class="tablewrap"><table class="audittable"><thead><tr><th>UTC</th><th>Order</th><th>Decision</th><th>Pts</th><th>Rules</th><th>Amount</th><th>Payment link</th></tr></thead><tbody>${body}</tbody></table></div>`;}catch(e){document.getElementById("audit-card").innerHTML='<div class="empty">Audit unavailable.</div>'}
+  }
+
+  document.getElementById("copy-audit").addEventListener("click",async e=>{const r=await fetch("/audit.jsonl");const text=await r.text();await navigator.clipboard.writeText(text);e.currentTarget.textContent="Copied";setTimeout(()=>e.currentTarget.textContent="Copy JSONL",1200)});
+</script>
+</body>
 </html>

@@ -1,0 +1,3 @@
+{"ts":"2026-09-02T14:00:01+00:00","order_id":"ord_blr_vet_01","decision":"ALLOW_COD","points":0,"threshold":50,"rules":["C4","C3","C2","C1"],"pincode":"560038","amount":899,"payment_link":null,"payment_link_mode":null,"policy_version":"v1.0"}
+{"ts":"2026-09-02T14:00:02+00:00","order_id":"ord_siwan_temple_01","decision":"FORCE_PREPAID","points":145,"threshold":50,"rules":["R4","R5","R6","R7","R8","R9"],"pincode":"841226","amount":3499,"payment_link":"plink_SIMULATED_ord_siwan_temple_01","payment_link_mode":"simulated","policy_version":"v1.0"}
+{"ts":"2026-09-02T14:00:03+00:00","order_id":"ord_bad_pin_01","decision":"STOP","points":0,"threshold":50,"rules":["R1"],"pincode":"56","amount":499,"payment_link":null,"payment_link_mode":null,"policy_version":"v1.0"}

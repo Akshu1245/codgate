@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0c0d0b" />
+  <title>Prepaid to ship · CodGate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet" />
+  <style>
+    :root{--bg:#0c0d0b;--surface:#151611;--elevated:#1c1e17;--fg:#eceae3;--muted:#9a978c;--subtle:#6e6c64;--border:#2a2c24;--accent:#e8e4d8;--accent-fg:#0c0d0b;--allow:#8fad86;--force:#d4b896;--stop:#c17a6a;--line:0 0 0 1px rgba(232,228,216,.08)}*{box-sizing:border-box}body{margin:0;min-height:100dvh;background:var(--bg);color:var(--fg);font-family:"IBM Plex Sans",system-ui,sans-serif;display:grid;grid-template-rows:auto 1fr}header{border-bottom:1px solid var(--border);padding:18px max(16px,calc((100vw - 760px)/2))}.kicker{font:400 11px/1.5 "IBM Plex Mono",monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}h1{font:400 38px/.95 "Instrument Serif",Georgia,serif;letter-spacing:-.03em;margin:4px 0 0}main{display:grid;place-items:center;padding:24px}.card{width:min(100%,460px);background:var(--surface);border-radius:18px;padding:24px;box-shadow:var(--line)}.id{word-break:break-all;color:var(--subtle);font:400 11px/1.5 "IBM Plex Mono",monospace}.amount{font:400 54px/.95 "Instrument Serif",Georgia,serif;letter-spacing:-.035em;margin:10px 0}.muted{color:var(--muted);font-size:13px}.btn{min-height:48px;width:100%;border:0;border-radius:9px;background:var(--force);color:var(--accent-fg);font-weight:600;margin-top:20px;cursor:pointer}.btn:disabled{opacity:.55;cursor:not-allowed}.back{min-height:44px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;text-decoration:none;margin-top:8px}.paid{background:var(--elevated);color:var(--allow);padding:13px;border-radius:9px;margin-top:18px;font-size:13px;box-shadow:var(--line)}
+  </style>
+</head>
+<body>
+<header><div class="kicker">CodGate · simulated Payment Link</div><h1>Prepaid to ship</h1></header>
+<main><div class="card"><div class="id" id="id"></div><div id="content"><p class="muted">Reading this link from localStorage…</p></div><a class="back" href="/">Back to the gate</a></div></main>
+<script>
+  const id=decodeURIComponent(location.pathname.split("/").pop()||"");document.getElementById("id").textContent=id;
+  const key=`codgate:plink:${id}`;let link=null;try{link=JSON.parse(localStorage.getItem(key)||"null")}catch(e){}
+  const money=n=>"₹"+Number(n||0).toLocaleString("en-IN");const content=document.getElementById("content");
+  async function state(){try{const r=await fetch(`/payment-links/${encodeURIComponent(id)}`);return await r.json()}catch(e){return {paid:Boolean(link?.paid)}}}
+  async function render(){const s=await state();if(!link){content.innerHTML=`<div class="amount">—</div><p class="muted">The id still looks simulated, but this link is not stored on this device. Nothing will be charged. Score the order again from Gate.</p>`;return;}if(s.paid||link.paid){content.innerHTML=`<div class="amount">${money(link.amount)}</div><div class="paid">Payment recorded. COD will not be collected.</div>`;return;}content.innerHTML=`<p class="muted">${link.customer_name?link.customer_name+" · ":""}${link.order_id}</p><div class="amount">${money(link.amount)}</div><p class="muted">COD was blocked. This is <span style="font-family:'IBM Plex Mono',monospace">plink_SIMULATED</span>; nothing is charged unless a Razorpay test link was issued from the Gate.</p><button class="btn" id="pay" type="button">Pay ${money(link.amount)}</button>`;document.getElementById("pay").addEventListener("click",async()=>{const r=await fetch(`/payment-links/${encodeURIComponent(id)}/paid`,{method:"POST"});if(r.ok){link.paid=true;localStorage.setItem(key,JSON.stringify(link));render()}})}
+  render();
+</script>
+</body>
+</html>
