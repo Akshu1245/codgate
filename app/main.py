@@ -16,7 +16,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .cases import CANONICAL_CASES
 from .ops import (
-    IDEMPOTENCY,
     IdempotencyConflict,
     append_chained_audit,
     canonical_json,
@@ -43,10 +42,12 @@ from .score import (
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
-AUDIT = ROOT / "audit.jsonl"
-OUTCOMES = ROOT / "outcomes.jsonl"
-PAYMENT_EVENTS = ROOT / "payment_events.jsonl"
-IDEMPOTENCY_PATH = IDEMPOTENCY
+DATA_DIR = Path(os.getenv("CODGATE_DATA_DIR", str(ROOT))).expanduser()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+AUDIT = DATA_DIR / "audit.jsonl"
+OUTCOMES = DATA_DIR / "outcomes.jsonl"
+PAYMENT_EVENTS = DATA_DIR / "payment_events.jsonl"
+IDEMPOTENCY_PATH = DATA_DIR / "idempotency.jsonl"
 
 WHAT_BROKE = [
     "Complete address on a high-RTO pin scores 47 — under 50 — so Siwan with a house number still ships COD (h42–h45, h80).",
@@ -264,6 +265,7 @@ def health():
         "execution_mode_default": default_execution_mode(),
         "policy_source_sha256": manifest["policy_source_sha256"],
         "heldout_sha256": HELDOUT_SHA256,
+        "runtime_store": str(DATA_DIR),
     }
 
 
@@ -282,6 +284,7 @@ def ready(response: Response):
         "audit_coverage": audit["coverage"],
         "outcome_chain_verified": outcomes["verified"],
         "payment_provider": _payment_provider_status()["mode"],
+        "runtime_store": str(DATA_DIR),
     }
 
 
@@ -306,6 +309,7 @@ def ops_status():
         "rollout_modes": ["shadow", "enforce"],
         "idempotency_header": "Idempotency-Key",
         "mode_header": "X-CodGate-Mode",
+        "runtime_store": str(DATA_DIR),
         "payment_provider": _payment_provider_status(),
         "policy": {**policy_manifest(), "heldout_sha256": HELDOUT_SHA256},
         "audit": audit,
