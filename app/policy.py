@@ -1,4 +1,4 @@
-"""Named-rule COD gate. Pure function — no network, no LLM, no I/O."""
+"""CodGate Policy v1.0. Pure function: no network, no LLM, no I/O."""
 
 from .features import extract_features
 
@@ -6,7 +6,7 @@ POLICY_VERSION = "v1.0"
 FORCE_THRESHOLD = 50
 
 
-def _stop(order: dict, features: dict, rule: dict) -> dict:
+def _stop(features: dict, rule: dict) -> dict:
     return {
         "decision": "STOP",
         "points": 0,
@@ -15,18 +15,16 @@ def _stop(order: dict, features: dict, rule: dict) -> dict:
         "rules": [rule],
         "features": features,
         "payment_link": None,
-        "payment_link_note": None,
-        "order": order,
     }
 
 
 def decide(order: dict) -> dict:
+    """Score one COD order. STOP short-circuits; otherwise points are additive."""
     features = extract_features(order)
-    rules = []
+    rules: list[dict] = []
 
     if not features["pincode_valid"]:
         return _stop(
-            order,
             features,
             {
                 "id": "R1",
@@ -37,9 +35,8 @@ def decide(order: dict) -> dict:
             },
         )
 
-    if not (features["amount"] > 0):
+    if features["amount"] <= 0:
         return _stop(
-            order,
             features,
             {
                 "id": "R2",
@@ -52,7 +49,6 @@ def decide(order: dict) -> dict:
 
     if features["address_class"] == "empty":
         return _stop(
-            order,
             features,
             {
                 "id": "R3",
@@ -63,158 +59,49 @@ def decide(order: dict) -> dict:
             },
         )
 
-    if features["address_class"] == "landmark_only":
-        rules.append(
-            {
-                "id": "R4",
-                "name": "LANDMARK_ONLY",
-                "points": 40,
-                "kind": "risk",
-                "reason": "Address is a landmark pin (temple / mandir / mosque) with no house number.",
-            }
-        )
-    elif features["address_class"] == "short":
-        rules.append(
-            {
-                "id": "R10",
-                "name": "SHORT_ADDRESS",
-                "points": 20,
-                "kind": "risk",
-                "reason": f"Address is {features['address_len']} chars — too thin to deliver.",
-            }
-        )
-    elif features["address_class"] == "partial":
-        rules.append(
-            {
-                "id": "R13",
-                "name": "PARTIAL_ADDRESS",
-                "points": 8,
-                "kind": "risk",
-                "reason": "Address has a house or locality, not both.",
-            }
-        )
-    else:
-        rules.append(
-            {
-                "id": "C4",
-                "name": "COMPLETE_ADDRESS",
-                "points": -8,
-                "kind": "credit",
-                "reason": "House number and street/locality both present.",
-            }
-        )
+    address_class = features["address_class"]
+    if address_class == "landmark_only":
+        rules.append({"id": "R4", "name": "LANDMARK_ONLY", "points": 40, "kind": "risk", "reason": "Landmark-only address with no house number."})
+    elif address_class == "short":
+        rules.append({"id": "R10", "name": "SHORT_ADDRESS", "points": 20, "kind": "risk", "reason": f"Address is {features['address_len']} chars — under 12."})
+    elif address_class == "partial":
+        rules.append({"id": "R13", "name": "PARTIAL_ADDRESS", "points": 8, "kind": "risk", "reason": "House or locality is incomplete."})
+    elif address_class == "complete":
+        rules.append({"id": "C4", "name": "COMPLETE_ADDRESS", "points": -8, "kind": "credit", "reason": "House number and street/locality are both present."})
 
-    if features["pin_band"] == "high":
-        city = f" ({features['pin_city']})" if features["pin_city"] else ""
-        rate = (features["pin_rto_rate"] or 0) * 100
-        rules.append(
-            {
-                "id": "R5",
-                "name": "HIGH_RTO_PIN",
-                "points": 25,
-                "kind": "risk",
-                "reason": f"Pincode {features['pincode']}{city} RTO {rate:.0f}%.",
-            }
-        )
-    elif features["pin_band"] == "mid":
-        rate = (features["pin_rto_rate"] or 0) * 100
-        rules.append(
-            {
-                "id": "R11",
-                "name": "MID_RTO_PIN",
-                "points": 10,
-                "kind": "risk",
-                "reason": f"Pincode {features['pincode']} sits in the mid RTO band ({rate:.0f}%).",
-            }
-        )
-    elif features["pin_band"] == "low":
-        city = f" ({features['pin_city']})" if features["pin_city"] else ""
-        rules.append(
-            {
-                "id": "C3",
-                "name": "LOW_RTO_PIN",
-                "points": -10,
-                "kind": "credit",
-                "reason": f"Pincode {features['pincode']}{city} is a low-RTO pin.",
-            }
-        )
+    pin_band = features["pin_band"]
+    if pin_band == "high":
+        rules.append({"id": "R5", "name": "HIGH_RTO_PIN", "points": 25, "kind": "risk", "reason": "Pincode is in the frozen high-RTO band."})
+    elif pin_band == "mid":
+        rules.append({"id": "R11", "name": "MID_RTO_PIN", "points": 10, "kind": "risk", "reason": "Pincode is in the frozen mid-RTO band."})
+    elif pin_band == "low":
+        rules.append({"id": "C3", "name": "LOW_RTO_PIN", "points": -10, "kind": "credit", "reason": "Pincode is in the frozen low-RTO band."})
 
     if features["is_new_customer"]:
-        rules.append(
-            {
-                "id": "R6",
-                "name": "NEW_CUSTOMER",
-                "points": 20,
-                "kind": "risk",
-                "reason": "New on this phone — under 21 days or zero prior orders.",
-            }
-        )
+        rules.append({"id": "R6", "name": "NEW_CUSTOMER", "points": 20, "kind": "risk", "reason": "Zero prior orders or account age under 21 days."})
     elif int(order.get("account_age_days") or 0) >= 180:
-        rules.append(
-            {
-                "id": "C2",
-                "name": "OLD_CUSTOMER",
-                "points": -10,
-                "kind": "credit",
-                "reason": f"Account age {order.get('account_age_days')} days.",
-            }
-        )
+        rules.append({"id": "C2", "name": "OLD_CUSTOMER", "points": -10, "kind": "credit", "reason": "Account age is at least 180 days."})
 
     if features["high_ticket"]:
-        rules.append(
-            {
-                "id": "R7",
-                "name": "HIGH_TICKET",
-                "points": 15,
-                "kind": "risk",
-                "reason": f"COD of ₹{round(features['amount'])} is above the ₹3,000 ticket cut.",
-            }
-        )
+        rules.append({"id": "R7", "name": "HIGH_TICKET", "points": 15, "kind": "risk", "reason": "COD amount is at least ₹3,000."})
 
     if features["prior_rto_on_phone"]:
-        n = int(order.get("prior_rto_count") or 0)
-        rules.append(
-            {
-                "id": "R8",
-                "name": "PRIOR_RTO_PHONE",
-                "points": 35,
-                "kind": "risk",
-                "reason": f"This phone already has {n} RTO{'s' if n != 1 else ''}.",
-            }
-        )
+        rules.append({"id": "R8", "name": "PRIOR_RTO_PHONE", "points": 35, "kind": "risk", "reason": "This phone has at least one prior RTO."})
 
     if not features["prepaid_history"]:
-        rules.append(
-            {
-                "id": "R9",
-                "name": "NO_PREPAID_HISTORY",
-                "points": 10,
-                "kind": "risk",
-                "reason": "No prepaid orders on this phone.",
-            }
-        )
+        rules.append({"id": "R9", "name": "NO_PREPAID_HISTORY", "points": 10, "kind": "risk", "reason": "No prepaid order history on this phone."})
     elif features["prepaid_veteran"]:
-        rules.append(
-            {
-                "id": "C1",
-                "name": "PREPAID_VETERAN",
-                "points": -15,
-                "kind": "credit",
-                "reason": f"{order.get('prepaid_orders')} prepaid orders on file.",
-            }
-        )
+        rules.append({"id": "C1", "name": "PREPAID_VETERAN", "points": -15, "kind": "credit", "reason": "At least three prepaid orders are on file."})
 
-    points = max(0, sum(r["points"] for r in rules))
-    fired = [r for r in rules if r["points"] != 0]
+    points = max(0, sum(rule["points"] for rule in rules))
     decision = "FORCE_PREPAID" if points >= FORCE_THRESHOLD else "ALLOW_COD"
+
     return {
         "decision": decision,
         "points": points,
         "threshold": FORCE_THRESHOLD,
         "policy_version": POLICY_VERSION,
-        "rules": fired,
+        "rules": rules,
         "features": features,
         "payment_link": None,
-        "payment_link_note": None,
-        "order": order,
     }
