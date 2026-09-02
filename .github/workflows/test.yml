@@ -34,4 +34,6 @@ jobs:
               raise SystemExit(f"Frozen metric block drifted:\n{actual}")
           PY
       - name: Check operator UI JavaScript
-        run: node --check static/ops.js
+        run: |
+          node --check static/ops.js
+          node --check static/repair.js
