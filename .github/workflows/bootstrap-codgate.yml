@@ -1,0 +1,24 @@
+name: bootstrap-codgate-final
+permissions:
+  contents: write
+on:
+  push:
+    paths:
+      - bootstrap/codgate-text.tar.gz
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install final CodGate source
+        run: |
+          tar -xzf bootstrap/codgate-text.tar.gz -C .
+          rm -f bootstrap/codgate-text.tar.gz .github/workflows/bootstrap-codgate.yml
+          rmdir bootstrap 2>/dev/null || true
+      - name: Publish final class repo
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Ship final CodGate AI Risk Manager" || exit 0
+          git push
