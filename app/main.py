@@ -1,47 +1,59 @@
-"""POST /orders/score — named rules, simulated Payment Link, append-only audit.jsonl."""
+"""CodGate HTTP desk: score, Payment Link, append-only audit, metrics and static UI."""
+
+from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .cases import CANONICAL_CASES
+from .payment import issue_payment_link
 from .policy import decide
+from .score import CSV_PATH, HELDOUT_SHA256, evaluate, frozen_block
 
 ROOT = Path(__file__).resolve().parents[1]
-AUDIT = ROOT / "audit.jsonl"
 STATIC = ROOT / "static"
-NOTE = (
-    "Razorpay keys not configured — writing plink_SIMULATED. "
-    "Swap in a test key to issue a live Payment Link."
-)
+AUDIT = ROOT / "audit.jsonl"
+PAYMENT_EVENTS = ROOT / "payment_events.jsonl"
+
+WHAT_BROKE = [
+    "Complete address on a high-RTO pin scores 47 — under 50 — so Siwan with a house number still ships COD (h42–h45, h80).",
+    "Metro prepaid veterans still RTO; credits drive score to 0 (h13, h14). Prior RTO on a veteran phone is cancelled by C1–C4 (h71–h73).",
+    "Temple drops that delivered get blocked (h25–h27, h34–h35). Short mid-pin addresses over-block (h60, h62). Landmark + high ticket on a metro pin is the ugly FP (h76).",
+]
 
 app = FastAPI(title="CodGate", version="v1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
-def _append_audit(result: dict) -> None:
-    entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "order_id": result["order"].get("order_id"),
-        "decision": result["decision"],
-        "points": result["points"],
-        "rules": [r["id"] for r in result["rules"]],
-        "pincode": result["order"].get("pincode"),
-        "amount": result["order"].get("amount"),
-        "payment_link": result.get("payment_link"),
-        "policy_version": result["policy_version"],
-    }
-    with AUDIT.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+def _append_jsonl(path: Path, entry: dict) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
+def _payment_paid(link_id: str) -> bool:
+    return any(
+        row.get("event") == "paid" and row.get("payment_link") == link_id
+        for row in _read_jsonl(PAYMENT_EVENTS)
+    )
 
 
 @app.get("/", include_in_schema=False)
@@ -49,9 +61,14 @@ def desk():
     return FileResponse(STATIC / "index.html")
 
 
+@app.get("/pay/{link_id}", include_in_schema=False)
+def pay_page(link_id: str):
+    return FileResponse(STATIC / "pay.html")
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "policy": "v1.0"}
+    return {"ok": True, "policy": "v1.0", "heldout_sha256": HELDOUT_SHA256}
 
 
 @app.get("/cases")
@@ -59,23 +76,86 @@ def cases():
     return CANONICAL_CASES
 
 
-@app.get("/audit")
-def read_audit():
-    if not AUDIT.exists():
-        return []
-    rows = []
-    for line in AUDIT.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            rows.append(json.loads(line))
-    return rows
-
-
 @app.post("/orders/score")
 def score_order(order: dict):
+    order = dict(order)
     order.setdefault("order_id", f"ord_api_{int(datetime.now().timestamp())}")
     result = decide(order)
+
+    payment_link_url = None
+    payment_link_mode = None
+    payment_link_note = None
     if result["decision"] == "FORCE_PREPAID":
-        result["payment_link"] = f"plink_SIMULATED_{order['order_id']}"
-        result["payment_link_note"] = NOTE
-    _append_audit(result)
-    return result
+        issued = issue_payment_link(order)
+        result["payment_link"] = issued.link_id
+        payment_link_url = issued.url
+        payment_link_mode = issued.mode
+        payment_link_note = issued.note
+
+    audit_entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "order_id": order.get("order_id"),
+        "decision": result["decision"],
+        "points": result["points"],
+        "threshold": result["threshold"],
+        "rules": [rule["id"] for rule in result["rules"]],
+        "pincode": order.get("pincode"),
+        "amount": order.get("amount"),
+        "payment_link": result.get("payment_link"),
+        "payment_link_mode": payment_link_mode,
+        "policy_version": result["policy_version"],
+    }
+    _append_jsonl(AUDIT, audit_entry)
+
+    return {
+        **result,
+        "order": order,
+        "payment_link_url": payment_link_url,
+        "payment_link_mode": payment_link_mode,
+        "payment_link_note": payment_link_note,
+    }
+
+
+@app.get("/audit")
+def read_audit():
+    return list(reversed(_read_jsonl(AUDIT)))
+
+
+@app.get("/audit.jsonl")
+def download_audit():
+    if not AUDIT.exists():
+        AUDIT.touch()
+    return FileResponse(AUDIT, media_type="application/jsonl", filename="audit.jsonl")
+
+
+@app.get("/metrics")
+def metrics():
+    report = evaluate()
+    return {
+        **report,
+        "expected_sha256": HELDOUT_SHA256,
+        "frozen_block": frozen_block(report),
+        "what_broke": WHAT_BROKE,
+    }
+
+
+@app.get("/data/heldout.csv")
+def heldout_csv():
+    return FileResponse(CSV_PATH, media_type="text/csv", filename="heldout.csv")
+
+
+@app.get("/payment-links/{link_id}")
+def payment_link_state(link_id: str):
+    return {"payment_link": link_id, "paid": _payment_paid(link_id), "simulated": link_id.startswith("plink_SIMULATED_")}
+
+
+@app.post("/payment-links/{link_id}/paid")
+def mark_payment_paid(link_id: str):
+    if not link_id.startswith("plink_SIMULATED_"):
+        raise HTTPException(status_code=409, detail="Only simulated links can be marked paid here.")
+    if not _payment_paid(link_id):
+        _append_jsonl(
+            PAYMENT_EVENTS,
+            {"ts": datetime.now(timezone.utc).isoformat(), "event": "paid", "payment_link": link_id},
+        )
+    return {"payment_link": link_id, "paid": True, "message": "Payment recorded. COD will not be collected."}
