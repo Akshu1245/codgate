@@ -13,8 +13,10 @@ CodGate is not another RTO model. It is the control plane after risk intelligenc
 | Pure policy | `decide(order)` remains the single v1.0 policy and returns no Payment Link |
 | Shadow rollout | `X-CodGate-Mode: shadow` records the real decision but never issues a link |
 | Enforcement | `X-CodGate-Mode: enforce` turns `FORCE_PREPAID` into a Razorpay test link or explicit simulation |
+| Counterfactual Risk Repair | Proves whether a **legitimate customer correction** can move the same frozen policy below threshold; never edits history to manufacture an allow |
 | Retry safety | `Idempotency-Key` replays the same receipt/link metadata and prevents duplicate decision audit rows |
 | Decision receipt | Deterministic `cgr_...` receipt binds order fingerprint + policy source + decision + rules |
+| Repair receipt | Deterministic `cgrr_...` receipt binds the before/after policy proof |
 | Audit integrity | New `audit.jsonl` rows are SHA-256 chained; `/audit/verify` detects edits or chain breaks |
 | Outcome feedback | `POST /orders/{order_id}/outcome` records `DELIVERED` or `RTO` in a separate chained ledger |
 | Live economics | `/metrics/live` joins observed outcomes to real decisions without editing the frozen benchmark |
@@ -23,7 +25,33 @@ CodGate is not another RTO model. It is the control plane after risk intelligenc
 | Payment trace | Razorpay test Payment Links use the CodGate receipt as `reference_id` and in notes |
 | Safe simulation | Unknown/fabricated `plink_SIMULATED_*` ids cannot be marked paid |
 
-The desk keeps the same four surfaces: **Gate / Policy / Metrics / Audit**. The Gate exposes **ENFORCE / SHADOW** without adding a second policy. The result carries an operational receipt; Policy shows source provenance; Metrics keeps the frozen block and separately shows observed traffic; Audit shows chain verification.
+The desk keeps the same four surfaces: **Gate / Policy / Metrics / Audit**. The Gate exposes **ENFORCE / SHADOW** without adding a second policy. The result carries an operational receipt plus a Risk Repair proof; Policy shows source provenance; Metrics keeps the frozen block and separately shows observed traffic; Audit shows chain verification.
+
+## Counterfactual Risk Repair
+
+Most risk systems stop at **why was this blocked?** CodGate asks a stricter operational question: **what is the smallest legitimate correction that would make COD safe under the exact same frozen policy?**
+
+Risk Repair is deliberately **not an override engine**. It cannot decrease `prior_rto_count`, make an account older, invent prepaid history, lower the order amount, or change the pincode risk band just to cross the threshold. Today it proves one bounded repair class: **address completion**. Invalid required fields are returned as correction requirements rather than guessed values.
+
+Example repairable order:
+
+```text
+560038 · near temple · ₹899 · new customer · no prepaid history
+Policy v1.0: FORCE_PREPAID · 60 pts
+Complete the real address and re-score
+Same Policy v1.0: 12 pts · ALLOW_COD
+```
+
+The canonical Siwan case is intentionally different:
+
+```text
+841226 · near temple · ₹3499 · new · prior RTO ×2 · no prepaid history
+Policy v1.0: FORCE_PREPAID · 145 pts
+Strongest legitimate address repair: 97 pts
+Result: NO SAFE REPAIR — keep prepaid
+```
+
+That distinction is the feature. A false block caused by fixable checkout data can be repaired; structural/historical risk cannot be edited away. `POST /orders/repair` exposes the same proof as an API, and every successful `/orders/score` response also includes `risk_repair`.
 
 ## Policy v1.0
 
@@ -88,13 +116,15 @@ POST /orders/ord_123/outcome
 - Metro prepaid veterans still RTO; credits drive score to 0 (h13, h14). Prior RTO on a veteran phone is cancelled by C1–C4 (h71–h73).
 - Temple drops that delivered get blocked (h25–h27, h34–h35). Short mid-pin addresses over-block (h60, h62). Landmark + high ticket on a metro pin is the ugly FP (h76).
 
+Risk Repair does not hide those failures. It only distinguishes the subset caused by legitimate customer-correctable input defects from failures that remain structural under v1.0.
+
 ## Canonical cases
 
 `ALLOW_COD`: `ord_blr_vet_01`, `560038`, complete Indiranagar address, ₹899, age 640, prepaid 11, prior RTO 0, orders 24 → **0 pts**, C4+C3+C2+C1.
 
-`FORCE_PREPAID`: `ord_siwan_temple_01`, `841226`, `near temple`, ₹3499, age 2, prepaid 0, prior RTO 2, orders 0 → **145 pts**, R4+R5+R6+R7+R8+R9. `decide()` still returns `payment_link=None`; the HTTP layer issues the link in enforce mode.
+`FORCE_PREPAID`: `ord_siwan_temple_01`, `841226`, `near temple`, ₹3499, age 2, prepaid 0, prior RTO 2, orders 0 → **145 pts**, R4+R5+R6+R7+R8+R9. `decide()` still returns `payment_link=None`; the HTTP layer issues the link in enforce mode. Risk Repair proves that even a complete address would still score **97**, so there is no safe correction path to COD.
 
-`STOP`: `ord_bad_pin_01`, pincode `56` → **R1**.
+`STOP`: `ord_bad_pin_01`, pincode `56` → **R1**. Risk Repair asks for the real six-digit pincode and refuses to invent one.
 
 ## Run
 
@@ -104,7 +134,7 @@ source .venv/bin/activate        # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 pytest -q
 python -m app.score
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.repair_app:app --host 0.0.0.0 --port 8000
 ```
 
 Open `http://localhost:8000`.
@@ -123,10 +153,12 @@ Idempotency-Key: <checkout retry key>
 
 - **shadow**: returns the same `ALLOW_COD / FORCE_PREPAID / STOP` policy decision, but a FORCE decision becomes `action: OBSERVE_ONLY` and no link is created.
 - **enforce**: a FORCE decision issues the Payment Link at the HTTP layer.
+- Every successful score response includes a read-only `risk_repair` proof. It never changes the decision in that response.
+- `POST /orders/repair` can be called before enforcement to ask whether legitimate correction can restore COD.
 - Same idempotency key + same request returns the original receipt/link metadata with `idempotent_replay: true` and no second decision row.
 - Same idempotency key + changed request returns HTTP 409.
 
-Operational endpoints: `/health`, `/ready`, `/ops/status`, `/policy/manifest`, `/audit/verify`, `/outcomes/verify`, `/metrics`, `/metrics/live`.
+Operational endpoints: `/health`, `/ready`, `/ops/status`, `/policy/manifest`, `/orders/repair`, `/audit/verify`, `/outcomes/verify`, `/metrics`, `/metrics/live`.
 
 See [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for the request contract and [`docs/JUDGE_REDTEAM.md`](docs/JUDGE_REDTEAM.md) for the explicit production gaps and judge attacks.
 
@@ -134,4 +166,6 @@ See [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for the request contract and [`
 
 This repo is a working prototype, not a claim that a public FastAPI service should be dropped into production unchanged. Productionisation would replace local JSONL/idempotency storage with Razorpay durable infrastructure, add service auth and merchant tenancy, bind the input contract to internal Magic Checkout/RTO signals, ingest real courier/fulfilment events instead of the public outcome endpoint, close real Payment Link state with signed webhooks, and put policy version approval/rollback under internal controls.
 
-The part CodGate is asking Razorpay to value is the **governance contract**: risk intelligence should end in a named, versioned, measurable and traceable merchant action.
+Risk Repair would also need a governed catalogue of **verified mutable fields**. A production system must prove that a corrected address/pincode came from a trusted checkout/address-validation flow rather than accept arbitrary edits from an untrusted client.
+
+The part CodGate is asking Razorpay to value is the **governance contract**: risk intelligence should end in a named, versioned, measurable and traceable merchant action — and when customer-correctable data caused the block, the system should be able to prove the smallest safe path back to COD without weakening real risk.
