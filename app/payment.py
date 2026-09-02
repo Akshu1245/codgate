@@ -45,7 +45,8 @@ def _simulated(order: dict, reason: str) -> PaymentLink:
     )
 
 
-def issue_payment_link(order: dict) -> PaymentLink:
+def issue_payment_link(order: dict, receipt_id: str | None = None) -> PaymentLink:
+    """Issue only a Razorpay test link; otherwise fall back explicitly to simulation."""
     key_id = os.getenv("RAZORPAY_KEY_ID", "").strip()
     key_secret = os.getenv("RAZORPAY_KEY_SECRET", "").strip()
 
@@ -61,10 +62,16 @@ def issue_payment_link(order: dict) -> PaymentLink:
             "Only Razorpay test keys are accepted by CodGate. A non-test key was ignored; nothing is charged.",
         )
 
+    reference_id = receipt_id or f"cg_{_safe_simulated_token(order.get('order_id'))}"
+    notes = {"order_id": str(order["order_id"]), "policy_version": "v1.0"}
+    if receipt_id:
+        notes["codgate_receipt"] = receipt_id
+
     payload = {
         "amount": int(round(float(order.get("amount") or 0) * 100)),
         "currency": "INR",
         "accept_partial": False,
+        "reference_id": reference_id,
         "description": f"CodGate prepaid to ship · {order['order_id']}",
         "customer": {
             "name": str(order.get("customer_name") or "COD customer"),
@@ -72,7 +79,7 @@ def issue_payment_link(order: dict) -> PaymentLink:
         },
         "notify": {"sms": False, "email": False},
         "reminder_enable": False,
-        "notes": {"order_id": order["order_id"], "policy_version": "v1.0"},
+        "notes": notes,
     }
     raw = json.dumps(payload).encode("utf-8")
     auth = base64.b64encode(f"{key_id}:{key_secret}".encode()).decode()
@@ -92,7 +99,7 @@ def issue_payment_link(order: dict) -> PaymentLink:
             link_id=link_id,
             url=short_url,
             mode="razorpay_test",
-            note="Razorpay test Payment Link issued. Test mode only; no live money movement.",
+            note="Razorpay test Payment Link issued and tied to the CodGate receipt. Test mode only; no live money movement.",
         )
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError, json.JSONDecodeError) as exc:
         return _simulated(
