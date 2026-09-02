@@ -4,6 +4,25 @@ Magic Checkout already scores RTO. We expose the gate — named rules, frozen me
 
 **Track 02 — AI Risk Manager.** One class: **will this COD RTO.** Policy v1.0 is frozen on 2026-09-02. `decide(order)` is pure: no network, no LLM, no I/O. The HTTP layer alone issues a Razorpay **test** Payment Link when test keys are present; otherwise it writes `plink_SIMULATED_{order_id}` and says so in the result stamp.
 
+CodGate is not another RTO model. It is the control plane after risk intelligence: a versioned merchant action, named reasons, reproducible economics, a rollout mode and a decision receipt that can be traced to the payment intervention. The public prototype does **not** claim access to Razorpay's private Magic Checkout score feed; inside Razorpay, this pattern belongs beside that internal signal rather than competing with it.
+
+## Working prototype
+
+| Control | What ships |
+|---|---|
+| Pure policy | `decide(order)` remains the single v1.0 policy and returns no Payment Link |
+| Shadow rollout | `X-CodGate-Mode: shadow` records the real decision but never issues a link |
+| Enforcement | `X-CodGate-Mode: enforce` turns `FORCE_PREPAID` into a Razorpay test link or explicit simulation |
+| Retry safety | `Idempotency-Key` replays the same receipt/link metadata and prevents duplicate decision audit rows |
+| Decision receipt | Deterministic `cgr_...` receipt binds order fingerprint + policy source + decision + rules |
+| Audit integrity | New `audit.jsonl` rows are SHA-256 chained; `/audit/verify` detects edits or chain breaks |
+| Policy provenance | `/policy/manifest` hashes `policy.py`, `features.py` and `pincodes.py` without duplicating policy logic |
+| Readiness | `/ready` fails if the held-out CSV hash drifts or the audit hash chain is broken |
+| Payment trace | Razorpay test Payment Links use the CodGate receipt as `reference_id` and in notes |
+| Safe simulation | Unknown/fabricated `plink_SIMULATED_*` ids cannot be marked paid |
+
+The desk keeps the same four surfaces: **Gate / Policy / Metrics / Audit**. The Gate now exposes **ENFORCE / SHADOW** without adding a second policy. The result carries an operational receipt; Policy shows source provenance; Audit shows chain verification.
+
 ## Policy v1.0
 
 STOP short-circuits. Else points are additive, floored at 0. `FORCE_PREPAID` iff points ≥ 50; otherwise `ALLOW_COD`.
@@ -41,6 +60,8 @@ TP 23 · FP 8 · FN 15 · TN 34
 SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a
 ```
 
+These are prototype economics on the frozen 80-row file, not a claim about Razorpay production performance. A real rollout should start in shadow on a merchant cohort and re-evaluate by merchant/value/pincode/customer tenure before enforcement.
+
 ## What broke
 
 - Complete address on a high-RTO pin scores 47 — under 50 — so Siwan with a house number still ships COD (h42–h45, h80).
@@ -51,7 +72,7 @@ SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a
 
 `ALLOW_COD`: `ord_blr_vet_01`, `560038`, complete Indiranagar address, ₹899, age 640, prepaid 11, prior RTO 0, orders 24 → **0 pts**, C4+C3+C2+C1.
 
-`FORCE_PREPAID`: `ord_siwan_temple_01`, `841226`, `near temple`, ₹3499, age 2, prepaid 0, prior RTO 2, orders 0 → **145 pts**, R4+R5+R6+R7+R8+R9. `decide()` still returns `payment_link=None`; the HTTP layer issues the link.
+`FORCE_PREPAID`: `ord_siwan_temple_01`, `841226`, `near temple`, ₹3499, age 2, prepaid 0, prior RTO 2, orders 0 → **145 pts**, R4+R5+R6+R7+R8+R9. `decide()` still returns `payment_link=None`; the HTTP layer issues the link in enforce mode.
 
 `STOP`: `ord_bad_pin_01`, pincode `56` → **R1**.
 
@@ -66,6 +87,31 @@ python -m app.score
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open `http://localhost:8000`. The desk has Gate / Policy / Metrics / Audit, the three canonical buttons, a custom-order form, simulated or Razorpay-test Payment Link handling, held-out CSV download, the tape, and append-only `audit.jsonl`.
+Open `http://localhost:8000`.
 
-For a real **test-mode** Payment Link only, set `RAZORPAY_KEY_ID=rzp_test_...` and `RAZORPAY_KEY_SECRET=...`. Live keys are ignored by design.
+For a real **test-mode** Payment Link only, set `RAZORPAY_KEY_ID=rzp_test_...` and `RAZORPAY_KEY_SECRET=...`. Live keys are ignored by design. In Razorpay test mode the decision receipt is sent as the Payment Link `reference_id` and notes so the payment object can be traced back to the risk receipt.
+
+## Integration contract
+
+Recommended checkout call:
+
+```text
+POST /orders/score
+X-CodGate-Mode: shadow | enforce
+Idempotency-Key: <checkout retry key>
+```
+
+- **shadow**: returns the same `ALLOW_COD / FORCE_PREPAID / STOP` policy decision, but a FORCE decision becomes `action: OBSERVE_ONLY` and no link is created.
+- **enforce**: a FORCE decision issues the Payment Link at the HTTP layer.
+- Same idempotency key + same request returns the original receipt/link metadata with `idempotent_replay: true` and no second decision row.
+- Same idempotency key + changed request returns HTTP 409.
+
+Operational endpoints: `/health`, `/ready`, `/ops/status`, `/policy/manifest`, `/audit/verify`, `/metrics`.
+
+See [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for the request contract and [`docs/JUDGE_REDTEAM.md`](docs/JUDGE_REDTEAM.md) for the explicit production gaps and judge attacks.
+
+## What would still be required inside Razorpay
+
+This repo is a working prototype, not a claim that a public FastAPI service should be dropped into production unchanged. Productionisation would replace local JSONL/idempotency storage with Razorpay durable infrastructure, add service auth and merchant tenancy, bind the input contract to internal Magic Checkout/RTO signals, close real Payment Link state with webhooks, and put policy version approval/rollback under internal controls.
+
+The part CodGate is asking Razorpay to value is the **governance contract**: risk intelligence should end in a named, versioned, measurable and traceable merchant action.
