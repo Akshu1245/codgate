@@ -13,3 +13,21 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pytest -q
       - run: python -m app.score
+      - name: Assert frozen metric block
+        run: |
+          python - <<'PY'
+          from app.score import evaluate, frozen_block
+
+          expected = """CodGate v1.0 · n=80 scored=80
+          Precision 74.2%
+          Recall    60.5%
+          false-block ₹1440 (₹180 × FP 8)
+          missed-RTO  ₹3750 (₹250 × FN 15)
+          TP 23 · FP 8 · FN 15 · TN 34
+          SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a"""
+          actual = frozen_block(evaluate())
+          if actual != expected:
+              raise SystemExit(f"Frozen metric block drifted:\n{actual}")
+          PY
+      - name: Check operator UI JavaScript
+        run: node --check static/ops.js
