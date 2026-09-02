@@ -5,9 +5,10 @@ CodGate is meant to sit after an RTO signal and before COD fulfilment. The publi
 ## Rollout
 
 1. **Shadow** — send real checkout-shaped orders with `X-CodGate-Mode: shadow`. CodGate records the decision and receipt but never issues a Payment Link.
-2. **Observe** — feed final `DELIVERED` / `RTO` fulfilment outcomes into the separate outcome ledger and inspect `/metrics/live`. Do not mutate the frozen v1.0 held-out labels.
-3. **Enforce** — switch the same request path to `X-CodGate-Mode: enforce`. Only `FORCE_PREPAID` can issue a Payment Link. `decide()` itself is unchanged.
-4. **Version** — any rule/weight change becomes a new policy version with a new evaluation and provenance hash.
+2. **Repair** — for a FORCE decision, inspect the attached `risk_repair` proof. If it says `REPAIRABLE`, collect the legitimate correction through a trusted checkout flow and re-score. If it says `STRUCTURAL_RISK`, do not weaken historical/location risk.
+3. **Observe** — feed final `DELIVERED` / `RTO` fulfilment outcomes into the separate outcome ledger and inspect `/metrics/live`. Do not mutate the frozen v1.0 held-out labels.
+4. **Enforce** — switch the same request path to `X-CodGate-Mode: enforce`. Only `FORCE_PREPAID` can issue a Payment Link. `decide()` itself is unchanged.
+5. **Version** — any rule/weight change becomes a new policy version with a new evaluation and provenance hash.
 
 ## Score one order
 
@@ -30,9 +31,24 @@ curl -X POST http://localhost:8000/orders/score \
   }'
 ```
 
-Shadow returns the real policy decision (`FORCE_PREPAID`) plus `action: OBSERVE_ONLY`, `would_issue_payment_link: true`, a deterministic `receipt_id`, request hash, policy source hash and chained audit hash. No link is issued.
+Shadow returns the real policy decision (`FORCE_PREPAID`) plus `action: OBSERVE_ONLY`, `would_issue_payment_link: true`, a deterministic `receipt_id`, request hash, policy source hash, chained audit hash and a read-only `risk_repair` proof. No link is issued.
 
 Change only the mode header to `enforce` to execute the same decision. With Razorpay test keys present, the HTTP layer creates a Razorpay test Payment Link. Without them, it returns an explicit `plink_SIMULATED_*` link.
+
+## Risk Repair contract
+
+`POST /orders/repair` accepts the same order shape and never writes an audit decision or issues a Payment Link. It is a counterfactual proof against the same Policy v1.0.
+
+Possible statuses:
+
+- `ALREADY_SAFE` — Policy v1.0 already allows COD.
+- `REPAIRABLE` — a legitimate customer-correctable defect can move the same policy below 50; the response states the criterion and before/after points.
+- `STRUCTURAL_RISK` — even the strongest allowed repair remains at or above 50; keep prepaid.
+- `NEEDS_CORRECTION` — a required field such as pincode/address/amount is invalid; CodGate refuses to invent a replacement value.
+
+The prototype's only scored repair class is **address completion**. Risk Repair never edits `prior_rto_count`, `account_age_days`, `orders_count`, `prepaid_orders`, `amount` or the pincode risk band merely to cross the threshold. The response includes a deterministic `cgrr_...` repair receipt.
+
+Production integration should accept corrected fields only from a trusted checkout/address-validation source. A customer-supplied prettier string is not proof that the physical address is true.
 
 ## Retry contract
 
@@ -70,6 +86,7 @@ In a Razorpay production integration this endpoint would normally be replaced by
 - `GET /health` — liveness, policy/source hash and default execution mode.
 - `GET /ready` — frozen held-out SHA + decision-chain + outcome-chain verification; returns 503 if any integrity check fails.
 - `GET /policy/manifest` — policy version, frozen date, threshold and source-file SHA-256s.
+- `POST /orders/repair` — counterfactual repair proof under the unchanged frozen policy.
 - `GET /audit/verify` — recomputes the decision hash chain.
 - `GET /outcomes/verify` — recomputes the observed-outcome hash chain.
 - `GET /metrics/live` — observed traffic evidence, kept separate from frozen metrics.
