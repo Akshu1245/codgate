@@ -32,15 +32,33 @@ This is the attack list we would use if we were reviewing CodGate for Razorpay. 
 
 **Answer:** The held-out report prices false blocks explicitly. `shadow` mode allows Razorpay to measure the counterfactual before issuing a link. `enforce` is a separate execution mode; the policy decision itself is unchanged.
 
+**Additional mitigation built:** Counterfactual Risk Repair distinguishes blocks caused by customer-correctable input quality from structural/historical risk. A legitimate address completion can be proven against the same frozen policy before asking the customer to prepay.
+
 **Remaining production work:** merchant-specific economics and holdout experimentation. Do not tune against the final test set.
 
-## 5. “Retries can issue two Payment Links.”
+## 5. “Is Risk Repair just gaming the score until COD passes?”
+
+**Attack:** A counterfactual engine could manufacture an allow by editing customer history, amount, pincode or other risk fields.
+
+**Mitigation built:** Risk Repair has an explicit mutable-field boundary. It never changes `prior_rto_count`, account age, order count, prepaid history, amount or the pincode risk band to cross the threshold. Its only scored repair class in this prototype is **address completion**. It runs the candidate back through the same `decide()` function; there is no second policy and no override path.
+
+The canonical Siwan order proves the guardrail: 145 pts before address completion, 97 pts after the strongest legitimate address repair, still `FORCE_PREPAID`. CodGate says **NO SAFE REPAIR** instead of weakening history.
+
+## 6. “What stops a customer lying about the corrected address?”
+
+**Attack:** A client could submit a nicer-looking address solely to regain COD.
+
+**Answer:** Nothing in this public prototype proves physical address truth, so Risk Repair does **not** automatically flip the original decision. It returns the criterion and asks the order to be re-scored after correction. The current endpoint is a decision-support proof, not a trusted-data oracle.
+
+**Remaining production work:** only accept repair fields from trusted checkout/address-validation sources, bind evidence to the receipt, and log who/what verified the correction.
+
+## 7. “Retries can issue two Payment Links.”
 
 **Attack:** Checkout/network retries are normal. A non-idempotent risk service can duplicate side effects.
 
 **Mitigation built:** `Idempotency-Key` is supported at the HTTP boundary. Same key + same request replays the original receipt/Payment Link metadata without appending a second decision row. Same key + changed request returns HTTP 409.
 
-## 6. “Your JSONL audit can be edited.”
+## 8. “Your JSONL audit can be edited.”
 
 **Attack:** Append-only by convention is not enough.
 
@@ -48,21 +66,21 @@ This is the attack list we would use if we were reviewing CodGate for Razorpay. 
 
 **Remaining production work:** write the same receipt to Razorpay’s durable event/audit infrastructure. Local JSONL is an MVP sink, not a production ledger.
 
-## 7. “Can anyone mark any simulated link paid?”
+## 9. “Can anyone mark any simulated link paid?”
 
 **Attack:** A forged `plink_SIMULATED_*` should not mutate state.
 
 **Mitigation built:** the payment endpoint only accepts simulated IDs that are present in CodGate’s decision audit. Unknown simulated IDs return 404. Non-simulated IDs cannot be manually marked paid.
 
-## 8. “Why Payment Links?”
+## 10. “Why Payment Links?”
 
 **Answer:** Payment Links are the bounded intervention after a COD policy block: collect before shipping instead of cancelling the order. In test mode, the Razorpay Payment Link carries the CodGate receipt as `reference_id`/notes so the payment object can be traced back to the decision receipt.
 
-## 9. “Why not just put this rule inside Magic Checkout?”
+## 11. “Why not just put this rule inside Magic Checkout?”
 
-**Answer:** That may be the correct production destination. CodGate is not arguing for another customer-facing product. It demonstrates the missing governance contract: named/versioned policy, rollout mode, decision receipt, false-block economics and traceable enforcement. If Razorpay likes it, the best outcome could be absorbing this control-plane pattern into Magic Checkout/RTO operations rather than operating CodGate as a separate service.
+**Answer:** That may be the correct production destination. CodGate is not arguing for another customer-facing product. It demonstrates the missing governance contract: named/versioned policy, rollout mode, decision receipt, false-block economics, traceable enforcement and now a bounded method to repair customer-correctable false blocks without weakening structural risk. If Razorpay likes it, the best outcome could be absorbing this control-plane pattern into Magic Checkout/RTO operations rather than operating CodGate as a separate service.
 
-## 10. “What would stop us shipping this tomorrow?”
+## 12. “What would stop us shipping this tomorrow?”
 
 - No private Magic Checkout/RTO signal integration in the public repo.
 - No Razorpay service-to-service auth or merchant tenancy.
@@ -70,5 +88,6 @@ This is the attack list we would use if we were reviewing CodGate for Razorpay. 
 - Local JSONL/idempotency files should become durable infrastructure stores.
 - Policy ownership/approval/rollback should use Razorpay’s internal controls.
 - Real Payment Link webhooks should close the payment state loop; the public desk only marks simulated links locally.
+- Risk Repair needs trusted field provenance/address validation before any corrected field can be used for enforcement.
 
 Those are productionisation items. They are not hidden behind demo claims.
