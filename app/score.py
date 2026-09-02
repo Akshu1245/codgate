@@ -1,4 +1,4 @@
-"""python -m app.score — Precision / Recall / false-block ₹180 / missed-RTO ₹250."""
+"""python -m app.score — frozen held-out metrics and SHA drift check."""
 
 from __future__ import annotations
 
@@ -16,13 +16,14 @@ HELDOUT_SHA256 = "327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e2
 
 
 def load_rows(path: Path = CSV_PATH) -> list[dict]:
-    with path.open(encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+    with path.open(encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
 
 
-def evaluate(rows: list[dict] | None = None) -> dict:
-    rows = rows if rows is not None else load_rows()
+def evaluate(rows: list[dict] | None = None, path: Path = CSV_PATH) -> dict:
+    rows = rows if rows is not None else load_rows(path)
     tp = fp = fn = tn = skipped = 0
+
     for row in rows:
         order = {
             "order_id": row["order_id"],
@@ -39,6 +40,7 @@ def evaluate(rows: list[dict] | None = None) -> dict:
         if result["decision"] == "STOP":
             skipped += 1
             continue
+
         predicted = result["decision"] == "FORCE_PREPAID"
         actual = row["actual_rto"].strip() == "1"
         if predicted and actual:
@@ -49,10 +51,10 @@ def evaluate(rows: list[dict] | None = None) -> dict:
             fn += 1
         else:
             tn += 1
+
     precision = 0 if tp + fp == 0 else tp / (tp + fp)
     recall = 0 if tp + fn == 0 else tp / (tp + fn)
-    raw = CSV_PATH.read_bytes()
-    sha = hashlib.sha256(raw).hexdigest()
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
         "n": len(rows),
         "scored": len(rows) - skipped,
@@ -66,22 +68,28 @@ def evaluate(rows: list[dict] | None = None) -> dict:
         "tn": tn,
         "skipped": skipped,
         "sha256": sha,
+        "sha_matches": sha == HELDOUT_SHA256,
     }
 
 
+def frozen_block(report: dict) -> str:
+    return "\n".join(
+        [
+            f"CodGate v1.0 · n={report['n']} scored={report['scored']}",
+            f"Precision {report['precision'] * 100:.1f}%",
+            f"Recall    {report['recall'] * 100:.1f}%",
+            f"false-block ₹{report['false_block_inr']} (₹{FALSE_BLOCK_INR} × FP {report['fp']})",
+            f"missed-RTO  ₹{report['missed_rto_inr']} (₹{MISSED_RTO_INR} × FN {report['fn']})",
+            f"TP {report['tp']} · FP {report['fp']} · FN {report['fn']} · TN {report['tn']}",
+            f"SHA-256 {report['sha256']}",
+        ]
+    )
+
+
 def main() -> None:
-    r = evaluate()
-    print(f"CodGate v1.0 · n={r['n']} scored={r['scored']}")
-    print(f"Precision {r['precision'] * 100:.1f}%")
-    print(f"Recall    {r['recall'] * 100:.1f}%")
-    print(
-        f"false-block ₹{r['false_block_inr']} (₹{FALSE_BLOCK_INR} × FP {r['fp']})"
-    )
-    print(
-        f"missed-RTO  ₹{r['missed_rto_inr']} (₹{MISSED_RTO_INR} × FN {r['fn']})"
-    )
-    print(f"SHA-256 {r['sha256']}")
-    if r["sha256"] != HELDOUT_SHA256:
+    report = evaluate()
+    print(frozen_block(report))
+    if not report["sha_matches"]:
         print("WARN: held-out hash drifted — labels were edited.")
 
 
