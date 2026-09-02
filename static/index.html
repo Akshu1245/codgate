@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CodGate</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0c0d0b;
+        --surface: #151611;
+        --elevated: #1c1e17;
+        --fg: #eceae3;
+        --muted: #9a978c;
+        --subtle: #6e6c64;
+        --border: #2a2c24;
+        --allow: #8fad86;
+        --force: #d4b896;
+        --stop: #c17a6a;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--fg); }
+      body {
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        line-height: 1.5;
+        min-height: 100dvh;
+      }
+      header, main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1.25rem; }
+      header { border-bottom: 1px solid var(--border); }
+      .kicker {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.6875rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      h1 {
+        font-family: "Instrument Serif", Georgia, serif;
+        font-size: 3rem;
+        font-weight: 400;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        margin: 0.4rem 0 0;
+      }
+      .pitch { color: var(--muted); max-width: 36rem; }
+      .row {
+        display: grid;
+        gap: 0.5rem;
+        margin: 1.5rem 0;
+      }
+      @media (min-width: 640px) { .row { grid-template-columns: 1fr 1fr 1fr; } }
+      button {
+        text-align: left;
+        background: var(--surface);
+        color: var(--fg);
+        border: 1px solid rgba(232, 228, 216, 0.08);
+        border-radius: 12px;
+        padding: 1rem;
+        cursor: pointer;
+        font: inherit;
+        min-height: 5.5rem;
+      }
+      button:hover { border-color: rgba(232, 228, 216, 0.14); background: var(--elevated); }
+      button .n { font-family: "IBM Plex Mono", monospace; font-size: 0.6875rem; color: var(--subtle); }
+      button .mark { font-family: "IBM Plex Mono", monospace; font-size: 0.6875rem; float: right; }
+      button h2 { font-size: 0.95rem; font-weight: 500; margin: 0.6rem 0 0.15rem; }
+      button p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+      .allow { color: var(--allow); }
+      .force { color: var(--force); }
+      .stop { color: var(--stop); }
+      .card {
+        background: var(--surface);
+        border: 1px solid rgba(232, 228, 216, 0.08);
+        border-radius: 16px;
+        padding: 1.25rem 1.5rem;
+      }
+      .stamp {
+        font-family: "Instrument Serif", Georgia, serif;
+        font-size: 2.4rem;
+        letter-spacing: -0.03em;
+        margin: 0.4rem 0 0.6rem;
+      }
+      pre {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--fg);
+        margin: 0.75rem 0 0;
+      }
+      .meta { color: var(--muted); font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <p class="kicker">Track 02 · will this COD RTO</p>
+      <h1>CodGate</h1>
+      <p class="pitch">
+        Magic Checkout already scores RTO. We expose the gate — named rules,
+        frozen metrics, Payment Link when we block COD.
+      </p>
+    </header>
+    <main>
+      <p class="kicker">Three buttons · POST /orders/score</p>
+      <div class="row">
+        <button type="button" data-case="allow">
+          <span class="n">01</span>
+          <span class="mark allow">ALLOW_COD</span>
+          <h2>Allow</h2>
+          <p>Indiranagar veteran</p>
+        </button>
+        <button type="button" data-case="force">
+          <span class="n">02</span>
+          <span class="mark force">FORCE_PREPAID</span>
+          <h2>Block + link</h2>
+          <p>Siwan temple drop</p>
+        </button>
+        <button type="button" data-case="stop">
+          <span class="n">03</span>
+          <span class="mark stop">STOP</span>
+          <h2>Stop</h2>
+          <p>pincode 56</p>
+        </button>
+      </div>
+      <div class="card" id="out">
+        <p class="kicker">Awaiting an order</p>
+        <p class="meta">decide() is pure. The handler issues plink_SIMULATED on FORCE_PREPAID and appends audit.jsonl.</p>
+      </div>
+    </main>
+    <script>
+      const CASES = {
+        allow: {
+          order_id: "ord_blr_vet_01",
+          pincode: "560038",
+          address: "Flat 12B, 4th Floor, 18 12th Main, HAL 2nd Stage, Indiranagar",
+          amount: 899,
+          account_age_days: 640,
+          prepaid_orders: 11,
+          prior_rto_count: 0,
+          orders_count: 24,
+          phone: "9876543210",
+          customer_name: "Ananya Rao",
+        },
+        force: {
+          order_id: "ord_siwan_temple_01",
+          pincode: "841226",
+          address: "near temple",
+          amount: 3499,
+          account_age_days: 2,
+          prepaid_orders: 0,
+          prior_rto_count: 2,
+          orders_count: 0,
+          phone: "9123456780",
+          customer_name: "Ravi Kumar",
+        },
+        stop: {
+          order_id: "ord_bad_pin_01",
+          pincode: "56",
+          address: "12 MG Road, Shivajinagar",
+          amount: 499,
+          account_age_days: 90,
+          prepaid_orders: 1,
+          prior_rto_count: 0,
+          orders_count: 3,
+          phone: "9000000000",
+          customer_name: "Test Drop",
+        },
+      };
+      const TONE = {
+        ALLOW_COD: { cls: "allow", mark: "ALLOW COD" },
+        FORCE_PREPAID: { cls: "force", mark: "FORCE PREPAID" },
+        STOP: { cls: "stop", mark: "STOP" },
+      };
+      const out = document.getElementById("out");
+      document.querySelectorAll("[data-case]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const order = CASES[btn.dataset.case];
+          out.innerHTML = '<p class="kicker">Scoring…</p>';
+          const res = await fetch("/orders/score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(order),
+          });
+          const data = await res.json();
+          const tone = TONE[data.decision] || TONE.STOP;
+          const rules = (data.rules || [])
+            .map((r) => r.id + (r.points > 0 ? " +" + r.points : " " + r.points))
+            .join(" · ");
+          const link = data.payment_link
+            ? `<p class="meta">Payment Link <code>${data.payment_link}</code></p>`
+            : "";
+          out.innerHTML = `
+            <p class="kicker">${data.policy_version} · ${data.points} / ${data.threshold} pts</p>
+            <p class="stamp ${tone.cls}">${tone.mark}</p>
+            <p class="meta">${rules || "no additive rules"}</p>
+            ${link}
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        });
+      });
+    </script>
+  </body>
+</html>

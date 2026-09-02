@@ -1,0 +1,81 @@
+order_id,pincode,address,amount,account_age_days,prepaid_orders,prior_rto_count,orders_count,phone,actual_rto
+h01,560038,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",899,640,11,0,24,9000000001,0
+h02,560001,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",1299,410,6,0,18,9000000002,0
+h03,400001,"B-204, 14 Napean Sea Road, Malabar Hill",749,800,14,0,31,9000000003,0
+h04,400050,"B-204, 14 Napean Sea Road, Malabar Hill",1599,365,5,0,12,9000000004,0
+h05,110017,"House 9, 22 Aurobindo Marg, Malviya Nagar",499,720,9,0,20,9000000005,0
+h06,110001,"House 9, 22 Aurobindo Marg, Malviya Nagar",2199,540,8,0,16,9000000006,0
+h07,500001,"Plot 41, Road 12, Banjara Hills",999,300,4,0,9,9000000007,0
+h08,600001,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",649,210,3,0,7,9000000008,0
+h09,411001,"B-204, 14 Napean Sea Road, Malabar Hill",1899,450,7,0,15,9000000009,0
+h10,380001,"Plot 41, Road 12, Banjara Hills",399,600,10,0,22,9000000010,0
+h11,560034,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",2499,280,5,0,11,9000000011,0
+h12,560038,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",799,900,20,0,40,9000000012,0
+h13,560038,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",1099,500,8,0,19,9000000013,1
+h14,400001,"B-204, 14 Napean Sea Road, Malabar Hill",899,330,4,0,10,9000000014,1
+h15,841226,near temple,3499,2,0,2,0,9000000015,1
+h16,854301,near mandir,4299,1,0,1,0,9000000016,1
+h17,277001,opp temple,3099,5,0,3,0,9000000017,1
+h18,846004,beside mosque,5199,0,0,1,0,9000000018,1
+h19,841226,near temple,3499,8,0,2,0,9000000019,1
+h20,848101,near mandir,3899,3,0,1,0,9000000020,1
+h21,786001,opp temple,4599,4,0,2,0,9000000021,1
+h22,795001,near temple,3299,6,0,1,0,9000000022,1
+h23,271001,beside mosque,6199,1,0,4,0,9000000023,1
+h24,854301,near temple,3499,9,0,2,0,9000000024,1
+h25,841226,near temple,3499,4,0,1,0,9000000025,0
+h26,846004,near mandir,4099,7,0,1,0,9000000026,0
+h27,277001,opp temple,3199,11,0,1,0,9000000027,0
+h28,841226,near temple,1499,3,0,0,0,9000000028,1
+h29,854301,near mandir,999,10,0,0,0,9000000029,1
+h30,848101,opp temple,2199,2,0,0,0,9000000030,1
+h31,786001,beside mosque,1799,15,0,0,0,9000000031,1
+h32,795001,near temple,1299,6,0,0,0,9000000032,1
+h33,271001,near mandir,2499,8,0,0,0,9000000033,1
+h34,841226,near temple,799,12,0,0,0,9000000034,0
+h35,854301,opp temple,599,18,0,0,0,9000000035,0
+h36,560038,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",3499,5,0,0,0,9000000036,0
+h37,400001,"B-204, 14 Napean Sea Road, Malabar Hill",4299,8,0,0,0,9000000037,0
+h38,110017,"House 9, 22 Aurobindo Marg, Malviya Nagar",3099,14,0,0,0,9000000038,0
+h39,500001,"Plot 41, Road 12, Banjara Hills",3899,2,0,0,0,9000000039,1
+h40,560001,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",5199,9,0,0,0,9000000040,0
+h41,600001,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",3499,16,1,0,1,9000000041,0
+h42,841226,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",899,4,0,0,0,9000000042,1
+h43,854301,"Plot 41, Road 12, Banjara Hills",1299,10,0,0,0,9000000043,1
+h44,277001,"House 9, 22 Aurobindo Marg, Malviya Nagar",499,7,0,0,0,9000000044,1
+h45,846004,"B-204, 14 Napean Sea Road, Malabar Hill",2199,3,0,0,0,9000000045,1
+h46,848101,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",799,19,0,0,0,9000000046,0
+h47,786001,"Plot 41, Road 12, Banjara Hills",1599,12,0,0,0,9000000047,0
+h48,795001,"House 9, 22 Aurobindo Marg, Malviya Nagar",999,6,1,0,1,9000000048,1
+h49,271001,"B-204, 14 Napean Sea Road, Malabar Hill",649,15,0,0,0,9000000049,0
+h50,841226,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",899,400,8,0,22,9000000050,0
+h51,854301,"Plot 41, Road 12, Banjara Hills",1299,520,6,0,17,9000000051,0
+h52,277001,"House 9, 22 Aurobindo Marg, Malviya Nagar",499,260,4,0,9,9000000052,0
+h53,846004,"B-204, 14 Napean Sea Road, Malabar Hill",1599,310,5,0,12,9000000053,0
+h54,848101,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",799,180,3,0,8,9000000054,1
+h55,786001,"Plot 41, Road 12, Banjara Hills",2199,440,9,0,20,9000000055,0
+h56,795001,"House 9, 22 Aurobindo Marg, Malviya Nagar",999,600,11,0,28,9000000056,0
+h57,271001,"B-204, 14 Napean Sea Road, Malabar Hill",649,210,3,0,7,9000000057,1
+h58,226001,near bus,899,3,0,0,0,9000000058,1
+h59,302001,abc nagar,1299,8,0,0,0,9000000059,1
+h60,700001,near bus,499,12,0,0,0,9000000060,0
+h61,800001,abc nagar,1599,5,0,0,0,9000000061,1
+h62,201301,near bus,799,16,0,0,0,9000000062,0
+h63,462001,abc nagar,2199,9,0,0,0,9000000063,1
+h64,226001,"c/o Ramesh, village tola",899,40,1,0,2,9000000064,0
+h65,302001,House 45 Koramangala,1299,90,2,0,4,9000000065,0
+h66,700001,"c/o Ramesh, village tola",2499,12,0,0,0,9000000066,1
+h67,800001,House 45 Koramangala,3499,6,0,0,0,9000000067,1
+h68,122001,"c/o Ramesh, village tola",799,200,3,0,6,9000000068,0
+h69,462001,House 45 Koramangala,1599,25,0,1,3,9000000069,1
+h70,201301,"c/o Ramesh, village tola",999,150,4,0,8,9000000070,0
+h71,560038,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",1299,400,5,1,14,9000000071,1
+h72,400001,"B-204, 14 Napean Sea Road, Malabar Hill",899,280,3,2,9,9000000072,1
+h73,110017,"House 9, 22 Aurobindo Marg, Malviya Nagar",2199,90,1,1,4,9000000073,1
+h74,560001,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",499,600,8,1,21,9000000074,0
+h75,560038,near temple,899,30,1,0,2,9000000075,0
+h76,400001,near mandir,3499,8,0,0,0,9000000076,0
+h77,110001,opp temple,1299,4,0,0,0,9000000077,1
+h78,500001,beside mosque,799,220,4,0,8,9000000078,0
+h79,226001,"Flat 12B, 18 12th Main, HAL 2nd Stage, Indiranagar",4499,310,6,0,12,9000000079,0
+h80,800001,"Plot 41, Road 12, Banjara Hills",3899,18,0,0,0,9000000080,1
