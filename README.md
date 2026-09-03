@@ -4,19 +4,53 @@ Magic Checkout already scores RTO. We expose the gate — named rules, frozen me
 
 **Track 02 — AI Risk Manager.** One class: **will this COD RTO.** Policy v1.0 is frozen on 2026-09-02. `decide(order)` is pure: no network, no LLM, no I/O. The HTTP layer alone issues a Razorpay **test** Payment Link when test keys are present; otherwise it writes `plink_SIMULATED_{order_id}` and says so in the result stamp.
 
-CodGate is not another RTO model. It is the control plane after risk intelligence: a versioned merchant action, named reasons, reproducible economics, a rollout mode and a decision receipt that can be traced to the payment intervention. The public prototype does **not** claim access to Razorpay's private Magic Checkout score feed; inside Razorpay, this pattern belongs beside that internal signal rather than competing with it.
+CodGate is not another RTO model. It is the control plane after risk intelligence: a versioned action, named reasons, reproducible economics, rollout controls and receipts. The public prototype does **not** claim access to Razorpay's private Magic Checkout score feed.
+
+## Direct Razorpay value — Risk Canary
+
+The original COD gate helps merchants when their checkout routes an order through CodGate. **Risk Canary is different: Razorpay can use it internally without waiting for any new e-commerce integration.**
+
+Before Razorpay ships a new Magic Checkout RTO model, rule set or threshold release, Canary accepts a replay window containing:
+
+- the **current** production decision,
+- the **candidate** release decision,
+- the observed `DELIVERED / RTO` outcome,
+- amount and merchant segment.
+
+Canary does **not** contain a second RTO model. Razorpay's existing risk system produces both decisions; Canary verifies the release and returns exactly one governance verdict:
+
+- `SHIP` — modeled ₹ loss does not increase, decision blast radius is within 15%, and no merchant segment's false-block rate worsens by more than 2 percentage points.
+- `SHADOW` — candidate may be better, but it changes too much traffic or has a segment-level regression that needs live observation first.
+- `BLOCK_RELEASE` — modeled ₹ loss increases or a merchant segment's false-block rate worsens by more than 5 percentage points.
+
+Every check produces a deterministic `cgrl_...` **release receipt**, current/candidate confusion costs, blocked GMV deltas, merchant-segment false-block deltas and changed-order examples.
+
+This directly protects Razorpay from a bad risk release affecting merchants already on Razorpay. It is an internal release verifier for Razorpay's own risk stack, not a new merchant product.
+
+API:
+
+```text
+POST /release/check
+GET  /release/demo/good   -> SHIP
+GET  /release/demo/wide   -> SHADOW
+GET  /release/demo/bad    -> BLOCK_RELEASE
+```
+
+The three demo windows are synthetic and are labelled as such. In production the rows would come from Razorpay-owned shadow/replay decisions and observed fulfilment outcomes.
 
 ## Working prototype
 
 | Control | What ships |
 |---|---|
-| Pure policy | `decide(order)` remains the single v1.0 policy and returns no Payment Link |
+| Pure transaction policy | `decide(order)` remains the single v1.0 COD policy and returns no Payment Link |
 | Shadow rollout | `X-CodGate-Mode: shadow` records the real decision but never issues a link |
 | Enforcement | `X-CodGate-Mode: enforce` turns `FORCE_PREPAID` into a Razorpay test link or explicit simulation |
-| Counterfactual Risk Repair | Proves whether a **legitimate customer correction** can move the same frozen policy below threshold; never edits history to manufacture an allow |
+| Counterfactual Risk Repair | Proves whether a legitimate customer correction can move the same frozen policy below threshold; never edits history to manufacture an allow |
+| **Razorpay Risk Canary** | Verifies precomputed current-vs-candidate release outputs and returns `SHIP / SHADOW / BLOCK_RELEASE` |
 | Retry safety | `Idempotency-Key` replays the same receipt/link metadata and prevents duplicate decision audit rows |
 | Decision receipt | Deterministic `cgr_...` receipt binds order fingerprint + policy source + decision + rules |
 | Repair receipt | Deterministic `cgrr_...` receipt binds the before/after policy proof |
+| Release receipt | Deterministic `cgrl_...` receipt binds the candidate-release verification window and verdict |
 | Audit integrity | New `audit.jsonl` rows are SHA-256 chained; `/audit/verify` detects edits or chain breaks |
 | Outcome feedback | `POST /orders/{order_id}/outcome` records `DELIVERED` or `RTO` in a separate chained ledger |
 | Live economics | `/metrics/live` joins observed outcomes to real decisions without editing the frozen benchmark |
@@ -25,15 +59,15 @@ CodGate is not another RTO model. It is the control plane after risk intelligenc
 | Payment trace | Razorpay test Payment Links use the CodGate receipt as `reference_id` and in notes |
 | Safe simulation | Unknown/fabricated `plink_SIMULATED_*` ids cannot be marked paid |
 
-The desk keeps the same four surfaces: **Gate / Policy / Metrics / Audit**. The Gate exposes **ENFORCE / SHADOW** without adding a second policy. The result carries an operational receipt plus a Risk Repair proof; Policy shows source provenance; Metrics keeps the frozen block and separately shows observed traffic; Audit shows chain verification.
+The desk keeps the same four surfaces: **Gate / Policy / Metrics / Audit**. Risk Canary lives inside **Policy** as an internal release-control section rather than becoming another dashboard.
 
 ## Counterfactual Risk Repair
 
-Most risk systems stop at **why was this blocked?** CodGate asks a stricter operational question: **what is the smallest legitimate correction that would make COD safe under the exact same frozen policy?**
+Most risk systems stop at **why was this blocked?** CodGate asks: **what is the smallest legitimate correction that would make COD safe under the exact same frozen policy?**
 
 Risk Repair is deliberately **not an override engine**. It cannot decrease `prior_rto_count`, make an account older, invent prepaid history, lower the order amount, or change the pincode risk band just to cross the threshold. Today it proves one bounded repair class: **address completion**. Invalid required fields are returned as correction requirements rather than guessed values.
 
-Example repairable order:
+Repairable example:
 
 ```text
 560038 · near temple · ₹899 · new customer · no prepaid history
@@ -42,7 +76,7 @@ Complete the real address and re-score
 Same Policy v1.0: 12 pts · ALLOW_COD
 ```
 
-The canonical Siwan case is intentionally different:
+Canonical Siwan case:
 
 ```text
 841226 · near temple · ₹3499 · new · prior RTO ×2 · no prepaid history
@@ -51,7 +85,7 @@ Strongest legitimate address repair: 97 pts
 Result: NO SAFE REPAIR — keep prepaid
 ```
 
-That distinction is the feature. A false block caused by fixable checkout data can be repaired; structural/historical risk cannot be edited away. `POST /orders/repair` exposes the same proof as an API, and every successful `/orders/score` response also includes `risk_repair`.
+`POST /orders/repair` exposes the proof, and every successful `/orders/score` response also includes `risk_repair`.
 
 ## Policy v1.0
 
@@ -90,25 +124,25 @@ TP 23 · FP 8 · FN 15 · TN 34
 SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a
 ```
 
-These are prototype economics on the frozen 80-row file, not a claim about Razorpay production performance. A real rollout should start in shadow on a merchant cohort and re-evaluate by merchant/value/pincode/customer tenure before enforcement.
+These are prototype economics on the frozen 80-row file, not a production-accuracy claim. Canary is separate: its production input would be a larger Razorpay-owned replay/shadow window.
 
-## Observed outcomes — separate from the frozen set
+## Observed outcomes
 
-A real risk control is incomplete until it learns what happened after fulfilment. CodGate therefore has a second, append-only outcome ledger:
+Live rollout evidence is kept separately from the frozen test set:
 
 ```text
 POST /orders/ord_123/outcome
 {"outcome":"DELIVERED","source":"courier"}
 ```
 
-or
+or:
 
 ```text
 POST /orders/ord_123/outcome
 {"outcome":"RTO","source":"courier"}
 ```
 
-`/metrics/live` joins the latest decision per order with the observed fulfilment outcome and reports coverage, precision/recall, ₹ false-block/missed-RTO cost, shadow volume and prepaid conversion for enforced FORCE_PREPAID decisions. Outcome rows are SHA-256 chained and are **never** written into `data/heldout.csv`; the frozen benchmark remains frozen.
+`/metrics/live` joins latest decisions to outcomes and reports coverage, precision/recall, ₹ false-block/missed-RTO cost, shadow volume and prepaid conversion. Outcome rows are SHA-256 chained and are **never** written into `data/heldout.csv`.
 
 ## What broke
 
@@ -116,13 +150,13 @@ POST /orders/ord_123/outcome
 - Metro prepaid veterans still RTO; credits drive score to 0 (h13, h14). Prior RTO on a veteran phone is cancelled by C1–C4 (h71–h73).
 - Temple drops that delivered get blocked (h25–h27, h34–h35). Short mid-pin addresses over-block (h60, h62). Landmark + high ticket on a metro pin is the ugly FP (h76).
 
-Risk Repair does not hide those failures. It only distinguishes the subset caused by legitimate customer-correctable input defects from failures that remain structural under v1.0.
+Risk Repair does not hide these failures. Risk Canary exists so a future candidate policy/model cannot silently ship a worse economic or segment outcome.
 
 ## Canonical cases
 
 `ALLOW_COD`: `ord_blr_vet_01`, `560038`, complete Indiranagar address, ₹899, age 640, prepaid 11, prior RTO 0, orders 24 → **0 pts**, C4+C3+C2+C1.
 
-`FORCE_PREPAID`: `ord_siwan_temple_01`, `841226`, `near temple`, ₹3499, age 2, prepaid 0, prior RTO 2, orders 0 → **145 pts**, R4+R5+R6+R7+R8+R9. `decide()` still returns `payment_link=None`; the HTTP layer issues the link in enforce mode. Risk Repair proves that even a complete address would still score **97**, so there is no safe correction path to COD.
+`FORCE_PREPAID`: `ord_siwan_temple_01`, `841226`, `near temple`, ₹3499, age 2, prepaid 0, prior RTO 2, orders 0 → **145 pts**, R4+R5+R6+R7+R8+R9. `decide()` still returns `payment_link=None`; the HTTP layer issues the link in enforce mode. Risk Repair proves that even a complete address would still score **97**.
 
 `STOP`: `ord_bad_pin_01`, pincode `56` → **R1**. Risk Repair asks for the real six-digit pincode and refuses to invent one.
 
@@ -139,11 +173,11 @@ uvicorn app.repair_app:app --host 0.0.0.0 --port 8000
 
 Open `http://localhost:8000`.
 
-For a real **test-mode** Payment Link only, set `RAZORPAY_KEY_ID=rzp_test_...` and `RAZORPAY_KEY_SECRET=...`. Live keys are ignored by design. In Razorpay test mode the decision receipt is sent as the Payment Link `reference_id` and notes so the payment object can be traced back to the risk receipt.
+For a real **test-mode** Payment Link only, set `RAZORPAY_KEY_ID=rzp_test_...` and `RAZORPAY_KEY_SECRET=...`. Live keys are ignored by design.
 
-## Integration contract
+## Integration contracts
 
-Recommended checkout call:
+Checkout:
 
 ```text
 POST /orders/score
@@ -151,21 +185,35 @@ X-CodGate-Mode: shadow | enforce
 Idempotency-Key: <checkout retry key>
 ```
 
-- **shadow**: returns the same `ALLOW_COD / FORCE_PREPAID / STOP` policy decision, but a FORCE decision becomes `action: OBSERVE_ONLY` and no link is created.
-- **enforce**: a FORCE decision issues the Payment Link at the HTTP layer.
-- Every successful score response includes a read-only `risk_repair` proof. It never changes the decision in that response.
-- `POST /orders/repair` can be called before enforcement to ask whether legitimate correction can restore COD.
-- Same idempotency key + same request returns the original receipt/link metadata with `idempotent_replay: true` and no second decision row.
-- Same idempotency key + changed request returns HTTP 409.
+Internal Razorpay release verification:
 
-Operational endpoints: `/health`, `/ready`, `/ops/status`, `/policy/manifest`, `/orders/repair`, `/audit/verify`, `/outcomes/verify`, `/metrics`, `/metrics/live`.
+```text
+POST /release/check
+{
+  "release_id": "magic-rto-v42",
+  "rows": [
+    {
+      "order_id": "ord_123",
+      "merchant_segment": "enterprise",
+      "amount": 3499,
+      "actual_rto": true,
+      "current_decision": "ALLOW_COD",
+      "candidate_decision": "FORCE_PREPAID"
+    }
+  ]
+}
+```
 
-See [`docs/INTEGRATION.md`](docs/INTEGRATION.md) for the request contract and [`docs/JUDGE_REDTEAM.md`](docs/JUDGE_REDTEAM.md) for the explicit production gaps and judge attacks.
+The release payload contains **precomputed** current/candidate outputs. Canary does not call or embed either model.
+
+Operational endpoints: `/health`, `/ready`, `/ops/status`, `/policy/manifest`, `/orders/repair`, `/release/check`, `/release/demo/{good|wide|bad}`, `/audit/verify`, `/outcomes/verify`, `/metrics`, `/metrics/live`.
+
+See [`docs/INTEGRATION.md`](docs/INTEGRATION.md) and [`docs/JUDGE_REDTEAM.md`](docs/JUDGE_REDTEAM.md).
 
 ## What would still be required inside Razorpay
 
-This repo is a working prototype, not a claim that a public FastAPI service should be dropped into production unchanged. Productionisation would replace local JSONL/idempotency storage with Razorpay durable infrastructure, add service auth and merchant tenancy, bind the input contract to internal Magic Checkout/RTO signals, ingest real courier/fulfilment events instead of the public outcome endpoint, close real Payment Link state with signed webhooks, and put policy version approval/rollback under internal controls.
+This repo is a working prototype, not a claim that a public FastAPI service should be dropped into production unchanged. Productionisation would replace local JSONL/idempotency storage with Razorpay durable infrastructure, add service auth and tenancy, bind order features to internal Magic Checkout/RTO signals, ingest real fulfilment events, close Payment Link state through signed webhooks, and put policy versions under internal approval/rollback controls.
 
-Risk Repair would also need a governed catalogue of **verified mutable fields**. A production system must prove that a corrected address/pincode came from a trusted checkout/address-validation flow rather than accept arbitrary edits from an untrusted client.
+For **Risk Canary**, the critical production integration is simpler: connect it to Razorpay's internal risk-model registry/release pipeline and feed it current-vs-candidate shadow/replay decisions plus observed outcomes. It can then become a required CI/release check before an RTO policy/model reaches production.
 
-The part CodGate is asking Razorpay to value is the **governance contract**: risk intelligence should end in a named, versioned, measurable and traceable merchant action — and when customer-correctable data caused the block, the system should be able to prove the smallest safe path back to COD without weakening real risk.
+The part CodGate asks Razorpay to value is the governance contract: **risk intelligence should not only make a decision; Razorpay should be able to prove the action, repair legitimate false blocks, and stop a bad risk release before it reaches every merchant.**
