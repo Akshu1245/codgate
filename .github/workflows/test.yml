@@ -17,6 +17,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pytest -q
       - run: python -m app.score
+      - run: python -m app.preflight
       - name: Assert frozen metric block
         run: |
           python - <<'PY'
@@ -43,6 +44,8 @@ jobs:
               result = demo_release(scenario)
               if result["verdict"] != verdict:
                   raise SystemExit(f"{scenario}: expected {verdict}, got {result['verdict']}")
+              if len(result["dataset_sha256"]) != 64:
+                  raise SystemExit(f"{scenario}: evidence SHA missing")
           PY
       - name: Check operator UI JavaScript
         run: |
