@@ -13,8 +13,12 @@ def test_release_demo_routes_match_governance_verdicts():
         assert response.status_code == 200
         body = response.json()
         assert body["verdict"] == verdict
+        assert body["loss_class"] == "COD_RTO"
         assert body["release_receipt"].startswith("cgrl_")
-        assert body["note"].startswith("Canary verifies precomputed")
+        assert len(body["dataset_sha256"]) == 64
+        assert "precomputed" in body["note"]
+        assert "evidence" in body
+        assert "baselines" in body
 
 
 def test_release_check_is_internal_verifier_not_candidate_model():
@@ -45,6 +49,8 @@ def test_release_check_is_internal_verifier_not_candidate_model():
     assert body["release_id"] == "risk-model-v42"
     assert body["candidate"]["fn"] == 0
     assert body["current"]["fn"] == 1
+    assert body["verdict"] == "SHADOW"  # two rows can never authorize a production release
+    assert body["evidence"]["sufficient_for_ship"] is False
 
 
 def test_release_check_rejects_unknown_decision_values():
