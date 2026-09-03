@@ -33,7 +33,19 @@ jobs:
           if actual != expected:
               raise SystemExit(f"Frozen metric block drifted:\n{actual}")
           PY
+      - name: Assert Razorpay release gate scenarios
+        run: |
+          python - <<'PY'
+          from app.canary import demo_release
+
+          expected = {"good": "SHIP", "wide": "SHADOW", "bad": "BLOCK_RELEASE"}
+          for scenario, verdict in expected.items():
+              result = demo_release(scenario)
+              if result["verdict"] != verdict:
+                  raise SystemExit(f"{scenario}: expected {verdict}, got {result['verdict']}")
+          PY
       - name: Check operator UI JavaScript
         run: |
           node --check static/ops.js
           node --check static/repair.js
+          node --check static/canary.js
