@@ -49,10 +49,12 @@ def main() -> None:
         _fail("frozen held-out evidence drifted")
 
     force_repair = analyze_repair(dict(CANONICAL_CASES[1]["order"]))
-    if force_repair["status"] != "NO_SAFE_REPAIR":
+    if force_repair["status"] != "STRUCTURAL_RISK" or force_repair["repairable"] is not False:
         _fail("canonical Siwan order must remain structurally unsafe after address repair")
-    if force_repair["best_candidate"]["points"] != 97:
+    if force_repair["base_points"] != 145 or force_repair["best_points"] != 97:
         _fail("canonical Siwan repair proof must remain 145 → 97")
+    if force_repair["best_decision"] != "FORCE_PREPAID":
+        _fail("canonical Siwan repair must never restore COD")
 
     canary_expected = {"good": "SHIP", "wide": "SHADOW", "bad": "BLOCK_RELEASE"}
     canary = {}
@@ -74,7 +76,7 @@ def main() -> None:
     print("loss class COD_RTO · defense-only")
     print("canonical ALLOW 0 · FORCE 145 · STOP R1")
     print("frozen held-out Precision 74.2% · Recall 60.5% · SHA exact")
-    print("Risk Repair canonical 145 → 97 · NO SAFE REPAIR")
+    print("Risk Repair canonical 145 → 97 · STRUCTURAL_RISK")
     print("Risk Canary good SHIP · wide SHADOW · bad BLOCK_RELEASE")
     print(f"Canary good evidence SHA {canary['good']['dataset_sha256']}")
 
