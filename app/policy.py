@@ -1,4 +1,9 @@
-"""CodGate Policy v1.0. Pure function: no network, no LLM, no I/O."""
+"""CodGate Policy v1.0. Pure function: no network, no LLM, no I/O.
+
+This deterministic policy is a control/regression fixture. Its location severity
+bands are not empirical pincode RTO rates; real model evidence is governed by
+the separate evidence/release gates.
+"""
 
 from .features import extract_features
 
@@ -69,13 +74,15 @@ def decide(order: dict) -> dict:
     elif address_class == "complete":
         rules.append({"id": "C4", "name": "COMPLETE_ADDRESS", "points": -8, "kind": "credit", "reason": "House number and street/locality are both present."})
 
+    # Legacy band IDs remain frozen so old decision fixtures stay reproducible.
+    # They are deterministic policy severity groups, not measured pincode RTO rates.
     pin_band = features["pin_band"]
     if pin_band == "high":
-        rules.append({"id": "R5", "name": "HIGH_RTO_PIN", "points": 25, "kind": "risk", "reason": "Pincode is in the frozen high-RTO band."})
+        rules.append({"id": "R5", "name": "HIGH_LOCATION_POLICY", "points": 25, "kind": "risk", "reason": "Pincode is in the frozen high-severity control band; no empirical pincode RTO rate is claimed."})
     elif pin_band == "mid":
-        rules.append({"id": "R11", "name": "MID_RTO_PIN", "points": 10, "kind": "risk", "reason": "Pincode is in the frozen mid-RTO band."})
+        rules.append({"id": "R11", "name": "MID_LOCATION_POLICY", "points": 10, "kind": "risk", "reason": "Pincode is in the frozen mid-severity control band; no empirical pincode RTO rate is claimed."})
     elif pin_band == "low":
-        rules.append({"id": "C3", "name": "LOW_RTO_PIN", "points": -10, "kind": "credit", "reason": "Pincode is in the frozen low-RTO band."})
+        rules.append({"id": "C3", "name": "LOW_LOCATION_POLICY", "points": -10, "kind": "credit", "reason": "Pincode is in the frozen low-severity control band; no empirical pincode RTO rate is claimed."})
 
     if features["is_new_customer"]:
         rules.append({"id": "R6", "name": "NEW_CUSTOMER", "points": 20, "kind": "risk", "reason": "Zero prior orders or account age under 21 days."})
