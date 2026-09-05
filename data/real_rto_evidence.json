@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "claim": "Small public real-data RTO prototype evidence; not Razorpay production accuracy",
+  "generated_from": {
+    "github_actions_run_id": 33963146611,
+    "artifact_id": 9968572047,
+    "pipeline": "python -m evidence.build_real_rto"
+  },
+  "source": {
+    "dataset_slug": "sahilr05/meesho-orders",
+    "dataset_page": "https://www.kaggle.com/datasets/sahilr05/meesho-orders",
+    "csv_member": "meesho Orders Aug.csv",
+    "source_rows": 208,
+    "zip_bytes": 9280,
+    "zip_sha256": "bd8dc168d218c403a7519f42364f307fbff26ad56adced18668e79cb9e171b6e",
+    "dataset_page_claim": "Kaggle page describes it as real Meesho supplier order data",
+    "dataset_page_license_text": "Data files © Original Authors"
+  },
+  "label_definition": {
+    "positive": "RTO_COMPLETE",
+    "negative": "DELIVERED",
+    "excluded": "All non-terminal/intermediate statuses"
+  },
+  "feature_policy": {
+    "principle": "Only fields available at/near order creation; no settlement, delivery or final-status fields",
+    "resolved_columns": {
+      "order_date": "Order Date",
+      "order_id": "Sub Order No",
+      "state": "Customer State",
+      "product": "Product Name",
+      "sku": "SKU",
+      "size": "Size",
+      "quantity": "Quantity",
+      "price": "Supplier Listed Price (Incl. GST + Commission)"
+    }
+  },
+  "dataset": {
+    "terminal_orders": 138,
+    "terminal_rto": 28,
+    "terminal_delivered": 110,
+    "prevalence": 0.2028985507246377,
+    "date_range": {
+      "start": "2022-08-01T00:00:00",
+      "end": "2022-08-31T00:00:00"
+    }
+  },
+  "split": {
+    "method": "chronological 60/20/20; no shuffle, resampling or augmentation",
+    "train": {"n": 82, "rto": 16, "start": "2022-08-01", "end": "2022-08-24"},
+    "validation": {"n": 28, "rto": 4, "start": "2022-08-24", "end": "2022-08-28"},
+    "test": {"n": 28, "rto": 8, "start": "2022-08-28", "end": "2022-08-31"}
+  },
+  "model": {
+    "family": "hashed logistic regression",
+    "selected_threshold": 0.3499999999999999,
+    "threshold_selection": "maximize F1 on validation split only"
+  },
+  "heldout_test": {
+    "n": 28,
+    "positives": 8,
+    "prevalence": 0.2857142857142857,
+    "threshold": 0.3499999999999999,
+    "precision": 0.23076923076923078,
+    "recall": 0.375,
+    "f1": 0.2857142857142857,
+    "average_precision": 0.3655826118326118,
+    "roc_auc": 0.43124999999999997,
+    "balanced_accuracy": 0.4375,
+    "tp": 3,
+    "fp": 10,
+    "fn": 5,
+    "tn": 10
+  },
+  "heldout_ci95_bootstrap": {
+    "precision": [0.0, 0.46153846153846156],
+    "recall": [0.0, 0.7506944444444438]
+  },
+  "limitations": [
+    "The source contains 139 terminal rows before deduplication and 138 unique terminal orders after deduplication/filtering.",
+    "The held-out test has 28 rows and 8 RTO positives, so uncertainty is wide.",
+    "This supplier-specific public dataset cannot establish Razorpay-wide production accuracy.",
+    "No synthetic rows, SMOTE, duplicate expansion or post-outcome features are used.",
+    "Raw third-party rows are not redistributed in this repository."
+  ]
+}

@@ -2,6 +2,10 @@ name: test
 on:
   push:
   pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,49 +19,67 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements.txt
-      - run: pytest -q
-      - run: python -m app.score
-      - run: python -m app.preflight
-      - name: Assert frozen metric block
+      - name: Run unit and integration tests
+        run: pytest -q
+      - name: Verify deterministic regression fixture
+        run: python -m app.score
+      - name: Run submission preflight
+        run: python -m app.preflight
+      - name: Verify frozen real detector runtime
         run: |
           python - <<'PY'
-          from app.score import evaluate, frozen_block
+          from app.return_risk_runtime import detector_status, score_return_risk
 
-          expected = """CodGate v1.0 · n=80 scored=80
-          Precision 74.2%
-          Recall    60.5%
-          false-block ₹1440 (₹180 × FP 8)
-          missed-RTO  ₹3750 (₹250 × FN 15)
-          TP 23 · FP 8 · FN 15 · TN 34
-          SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a"""
-          actual = frozen_block(evaluate())
-          if actual != expected:
-              raise SystemExit(f"Frozen metric block drifted:\n{actual}")
+          status = detector_status()
+          test = status["heldout_test"]
+          assert status["ready"] is True
+          assert status["model_version"] == "amazon-return-risk-v2"
+          assert status["runtime_model_sha256"] == "ced7e510515cc54ab874f598c4999c6c407d76fce36dccc007d114f128ccd754"
+          assert status["source_zip_sha256"] == "2d174af66d3390f6bdd157fec4e29e076e3454ed6935f124510ccc66f85c459a"
+          assert test["n"] == 5726 and test["positives"] == 362
+          assert (test["tp"], test["fp"], test["fn"], test["tn"]) == (84, 665, 278, 4699)
+
+          result = score_return_risk({
+              "order_date": "2022-06-10",
+              "fulfilment": "Merchant",
+              "sales_channel": "Amazon.in",
+              "service_level": "Standard",
+              "category": "kurta",
+              "size": "M",
+              "ship_city": "Bengaluru",
+              "ship_state": "Karnataka",
+              "postal_code": "560038",
+              "b2b": False,
+              "quantity": 1,
+              "amount": 899,
+              "item_rows": 1,
+          })
+          assert result["execution"] == "advisory_only"
+          assert result["score_is_calibrated_probability"] is False
+          assert "risk_probability" not in result
+          assert "payment_link" not in result
+          print("Frozen runtime model · SHA verified · scoring PASS")
           PY
-      - name: Assert Razorpay release gate scenarios
+      - name: Assert Razorpay release gate regression scenarios
         run: |
           python - <<'PY'
           from app.canary import demo_release
-
           expected = {"good": "SHIP", "wide": "SHADOW", "bad": "BLOCK_RELEASE"}
           for scenario, verdict in expected.items():
               result = demo_release(scenario)
-              if result["verdict"] != verdict:
-                  raise SystemExit(f"{scenario}: expected {verdict}, got {result['verdict']}")
-              if len(result["dataset_sha256"]) != 64:
-                  raise SystemExit(f"{scenario}: evidence SHA missing")
+              assert result["verdict"] == verdict, (scenario, result["verdict"])
+              assert len(result["dataset_sha256"]) == 64
           PY
-      - name: Check operator UI JavaScript
+      - name: Check UI JavaScript
         run: |
           node --check static/ops.js
           node --check static/repair.js
           node --check static/canary.js
-      - name: Check six-surface console JavaScript
-        run: |
+          node --check static/real_evidence.js
+          node --check static/return_risk.js
           python - <<'PY'
           from pathlib import Path
           import re
-
           html = Path("static/index.html").read_text(encoding="utf-8")
           scripts = re.findall(r"<script>([\s\S]*?)</script>", html)
           if not scripts:
@@ -65,6 +87,149 @@ jobs:
           Path("/tmp/codgate-console.js").write_text(scripts[-1], encoding="utf-8")
           PY
           node --check /tmp/codgate-console.js
+
+  real-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-evidence.txt
+      - run: pip install -r requirements-evidence.txt
+      - name: Rebuild Meesho exact-RTO external validation
+        run: python -m evidence.build_real_rto
+      - name: Validate reproduced Meesho evidence and fail-closed verdict
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.evidence_gate import real_evidence_status
+
+          generated = json.loads(Path("artifacts/real-rto-evidence/report.json").read_text())
+          frozen = json.loads(Path("data/real_rto_evidence.json").read_text())
+          source = generated["source"]
+          test = generated["heldout_test"]
+          split = generated["split"]
+          dataset = generated["dataset"]
+
+          assert source["dataset_slug"] == "sahilr05/meesho-orders"
+          assert source["zip_sha256"] == "bd8dc168d218c403a7519f42364f307fbff26ad56adced18668e79cb9e171b6e"
+          assert dataset == frozen["dataset"]
+          assert test == frozen["heldout_test"]
+          assert generated["heldout_ci95_bootstrap"] == frozen["heldout_ci95_bootstrap"]
+          assert split["train"]["date_range"]["end"] <= split["validation"]["date_range"]["start"]
+          assert split["validation"]["date_range"]["end"] <= split["test"]["date_range"]["start"]
+          result = real_evidence_status()
+          assert result["verdict"] == "BLOCK_RELEASE"
+          assert result["raw_rows_embedded"] is False
+          print("Meesho exact-RTO external validation · reproduced · BLOCK_RELEASE")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codgate-meesho-rto-evidence
+          path: artifacts/real-rto-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  exact-cod-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-evidence.txt
+      - run: pip install -r requirements-evidence.txt
+      - name: Rebuild exact-COD seller audit
+        run: python -m evidence.amazon_cod_audit
+      - name: Enforce exact-COD audit scope
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/amazon-cod-audit/report.json").read_text())
+          source = report["source"]
+          exact = report["exact_cod_slice"]
+          assert source["dataset_slug"] == "pranalibose/amazon-seller-order-status-prediction"
+          assert len(source["zip_sha256"]) == 64
+          assert exact["cod_terminal_rows"] == 47
+          assert exact["cod_returned_to_seller"] == 5
+          assert exact["cod_delivered_to_buyer"] == 42
+          assert report["final_benchmark_eligible"] is False
+          print("Exact-COD audit · 47 terminal orders · domain check only")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codgate-exact-cod-audit
+          path: artifacts/amazon-cod-audit
+          if-no-files-found: error
+          retention-days: 30
+
+  return-risk-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-evidence.txt
+      - run: pip install -r requirements-evidence.txt
+      - name: Rebuild sealed-holdout Amazon India detector evidence
+        run: python -m evidence.amazon_return_risk_v2
+      - name: Validate reproduced evidence against frozen accepted result
+        run: |
+          python - <<'PY'
+          import json, math
+          from pathlib import Path
+
+          report = json.loads(Path("artifacts/amazon-return-risk-v2/report.json").read_text())
+          frozen = json.loads(Path("data/return_risk_evidence_v2.json").read_text())
+          source = report["source"]
+          dataset = report["dataset"]
+          split = report["split"]
+          test = report["heldout_test"]
+          accepted = frozen["heldout_test"]
+          leakage = report["leakage_controls"]
+          selected = report["selection"]["selected"]
+
+          assert report["schema_version"] == 2
+          assert source["dataset_slug"] == "thedevastator/unlock-profits-with-e-commerce-sales-data"
+          assert source["zip_sha256"] == frozen["source"]["zip_sha256"] == "2d174af66d3390f6bdd157fec4e29e076e3454ed6935f124510ccc66f85c459a"
+          assert dataset == frozen["dataset"]
+          assert split["final_test"]["n"] == 5726
+          assert split["final_test"]["returned_to_seller"] == 362
+          assert (test["tp"], test["fp"], test["fn"], test["tn"]) == (84, 665, 278, 4699)
+          for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision", "roc_auc", "prevalence", "precision_lift_vs_prevalence"):
+              assert math.isclose(test[metric], accepted[metric], rel_tol=0, abs_tol=1e-12), (metric, test[metric], accepted[metric])
+          assert math.isclose(test["threshold"], accepted["threshold"], rel_tol=0, abs_tol=1e-12)
+          assert test["false_positive_order_gmv_at_risk_inr"] == 443627.0
+          assert test["missed_return_order_gmv_inr"] == 187138.0
+          assert selected["validation_f1"] > 0 and selected["validation_precision"] > 0 and selected["validation_recall"] > 0
+          assert leakage == {
+              "order_id_feature": False,
+              "status_feature": False,
+              "courier_status_feature": False,
+              "duplicate_item_rows_split_across_sets": False,
+              "target_encoding_train_only": True,
+              "train_target_encoding_leave_one_out": True,
+              "final_test_used_for_model_selection": False,
+              "synthetic_rows_or_smote": False,
+          }
+          assert report["false_positive_cost_disclosure"]["realized_profit_loss_identifiable_from_source"] is False
+          assert test["precision"] > test["prevalence"]
+          assert test["recall"] > 0
+          print("Primary real detector · 5,726 sealed holdout · evidence reproduced")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codgate-primary-return-risk-evidence-v2
+          path: artifacts/amazon-return-risk-v2
+          if-no-files-found: error
+          retention-days: 30
 
   browser:
     needs: test
@@ -85,9 +250,7 @@ jobs:
           uvicorn app.repair_app:app --host 127.0.0.1 --port 8000 >/tmp/codgate-server.log 2>&1 &
           echo $! >/tmp/codgate-server.pid
           for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
-              break
-            fi
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then break; fi
             sleep 1
           done
           curl -fsS http://127.0.0.1:8000/ready
@@ -108,7 +271,7 @@ jobs:
           retention-days: 14
 
   package:
-    needs: [test, browser]
+    needs: [test, browser, real-evidence, exact-cod-audit, return-risk-evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,12 +279,11 @@ jobs:
         run: |
           rm -f codgate-submission.zip
           zip -r codgate-submission.zip \
-            app static data docs tests .github \
-            README.md requirements.txt requirements-dev.txt Procfile pytest.ini .gitignore \
-            -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl" "browser-artifacts/*"
+            app static data docs tests evidence .github \
+            README.md requirements.txt requirements-dev.txt requirements-evidence.txt Procfile pytest.ini .gitignore \
+            -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl" "browser-artifacts/*" ".cache/*" "artifacts/*"
           unzip -t codgate-submission.zip
-      - name: Upload verified submission ZIP
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: codgate-submission
           path: codgate-submission.zip

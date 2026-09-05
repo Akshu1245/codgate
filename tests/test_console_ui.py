@@ -28,10 +28,20 @@ def test_root_exposes_migration_console_surfaces():
         assert surface in body
 
     # The redesign is an operations console, not a generic AI dashboard.
-    assert "COD Risk Governance Engine" in body
-    assert "Razorpay internal risk operations" in body
+    assert "/static/return_risk.js" in body
     assert "glassmorphism" not in body.lower()
     assert "linear-gradient" not in body.lower()
+
+
+def test_return_risk_runtime_owns_the_judge_facing_scope_copy():
+    script = (ROOT / "static" / "return_risk.js").read_text(encoding="utf-8")
+    assert "Primary loss: return-to-seller" in script
+    assert "Return Risk Governance Engine" in script
+    assert "Govern when return-risk intelligence is allowed to change checkout." in script
+    assert "one merchant-loss class—return-to-seller" in script
+    assert "score_is_calibrated_probability" in script
+    assert "not described as a calibrated probability" in script
+    assert "large Amazon India return-to-seller data = primary detector" in script
 
 
 def test_console_wires_to_existing_governance_contracts():

@@ -53,7 +53,9 @@ def extract_features(order: dict) -> dict:
     return {
         "pincode": pin,
         "pincode_valid": is_valid_pincode(pin),
+        # No empirical pincode rate is available in this public prototype.
         "pin_rto_rate": pin_meta["rate"],
+        "pin_rate_source": pin_meta["rate_source"],
         "pin_band": pin_meta["band"],
         "pin_city": pin_meta["city"],
         "address_class": address_class,
