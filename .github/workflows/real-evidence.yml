@@ -1,0 +1,67 @@
+name: real-return-evidence
+
+on:
+  push:
+    branches:
+      - feat/real-return-risk-evidence
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  real-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install real-evidence dependencies
+        run: pip install -r requirements-real.txt
+      - name: Download official UCI Online Retail dataset
+        run: |
+          mkdir -p data/real_raw artifacts/real_return
+          curl --fail --location --retry 3 \
+            -o /tmp/online-retail.zip \
+            "https://archive.ics.uci.edu/static/public/352/online+retail.zip"
+          unzip -t /tmp/online-retail.zip
+          unzip -o /tmp/online-retail.zip -d data/real_raw
+          find data/real_raw -maxdepth 2 -type f -print
+      - name: Build leakage-safe chronological evidence
+        run: |
+          INPUT="$(find data/real_raw -type f \( -iname '*.xlsx' -o -iname '*.xls' \) | head -n 1)"
+          test -n "$INPUT"
+          python scripts/build_real_return_evidence.py --input "$INPUT" --outdir artifacts/real_return
+          cat artifacts/real_return/metrics.json
+      - name: Validate evidence invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path('artifacts/real_return/metrics.json')
+          report = json.loads(p.read_text())
+          assert report['source']['raw_rows'] > 500_000
+          assert len(report['source']['raw_sha256']) == 64
+          assert report['orders']['eligible'] > 10_000
+          assert report['test']['rows'] > 1_000
+          assert report['test']['positives'] > 0
+          assert 0 <= report['test']['precision'] <= 1
+          assert 0 <= report['test']['recall'] <= 1
+          assert report['split']['train_end'] <= report['split']['validation_start']
+          assert report['split']['validation_end'] <= report['split']['test_start']
+          assert report['matching']['matched_cancel_unit_rate'] > 0
+          forbidden = ('invoice', 'cancel', 'return', 'label', 'target', 'outcome')
+          for feature in report['model']['feature_names']:
+              assert not any(token in feature.lower() for token in forbidden), feature
+          assert report['test']['false_positive_cost_upper_bound_gbp'] >= 0
+          PY
+      - name: Upload real evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codgate-real-return-evidence
+          path: artifacts/real_return/
+          if-no-files-found: error
+          retention-days: 14
