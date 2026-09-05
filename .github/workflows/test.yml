@@ -18,7 +18,7 @@ jobs:
       - run: pytest -q
       - run: python -m app.score
       - run: python -m app.preflight
-      - name: Assert frozen metric block
+      - name: Assert regression-fixture metric block
         run: |
           python - <<'PY'
           from app.score import evaluate, frozen_block
@@ -32,7 +32,7 @@ jobs:
           SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a"""
           actual = frozen_block(evaluate())
           if actual != expected:
-              raise SystemExit(f"Frozen metric block drifted:\n{actual}")
+              raise SystemExit(f"Regression fixture drifted:\n{actual}")
           PY
       - name: Assert Razorpay release gate scenarios
         run: |
@@ -65,6 +65,52 @@ jobs:
           Path("/tmp/codgate-console.js").write_text(scripts[-1], encoding="utf-8")
           PY
           node --check /tmp/codgate-console.js
+
+  real-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-evidence.txt
+      - run: pip install -r requirements-evidence.txt
+      - name: Build real Meesho RTO held-out evidence
+        run: python -m evidence.real_rto
+      - name: Validate evidence contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("artifacts/real-rto-evidence/report.json").read_text())
+          source = report["source"]
+          test = report["heldout_test"]
+          split = report["split"]
+          if source["dataset_slug"] != "sahilr05/meesho-orders":
+              raise SystemExit("Unexpected dataset source")
+          if len(source["zip_sha256"]) != 64:
+              raise SystemExit("Missing source ZIP SHA-256")
+          if report["dataset"]["terminal_orders"] < 200:
+              raise SystemExit("Real terminal dataset is too small")
+          if test["n"] < 50 or test["positives"] < 1:
+              raise SystemExit("Held-out split is not meaningful")
+          for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision"):
+              value = test[metric]
+              if not 0.0 <= value <= 1.0:
+                  raise SystemExit(f"Invalid {metric}: {value}")
+          if split["train"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
+              raise SystemExit("Chronological split overlap detected")
+          print(json.dumps(test, indent=2, sort_keys=True))
+          PY
+      - name: Upload real-data evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: codgate-real-rto-evidence
+          path: artifacts/real-rto-evidence
+          if-no-files-found: error
+          retention-days: 30
 
   browser:
     needs: test
@@ -108,7 +154,7 @@ jobs:
           retention-days: 14
 
   package:
-    needs: [test, browser]
+    needs: [test, browser, real-evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,9 +162,9 @@ jobs:
         run: |
           rm -f codgate-submission.zip
           zip -r codgate-submission.zip \
-            app static data docs tests .github \
-            README.md requirements.txt requirements-dev.txt Procfile pytest.ini .gitignore \
-            -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl" "browser-artifacts/*"
+            app static data docs tests evidence .github \
+            README.md requirements.txt requirements-dev.txt requirements-evidence.txt Procfile pytest.ini .gitignore \
+            -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl" "browser-artifacts/*" ".cache/*" "artifacts/*"
           unzip -t codgate-submission.zip
       - name: Upload verified submission ZIP
         uses: actions/upload-artifact@v4
