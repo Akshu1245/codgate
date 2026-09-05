@@ -167,31 +167,36 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-evidence.txt
       - run: pip install -r requirements-evidence.txt
-      - name: Build primary real Amazon India return-risk detector
-        run: python -m evidence.amazon_return_risk
-      - name: Validate untouched held-out detector evidence
+      - name: Build sealed-holdout real Amazon India return-risk detector v2
+        run: python -m evidence.amazon_return_risk_v2
+      - name: Validate v2 held-out detector evidence
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          report = json.loads(Path("artifacts/amazon-return-risk/report.json").read_text())
+          report = json.loads(Path("artifacts/amazon-return-risk-v2/report.json").read_text())
           source = report["source"]
           dataset = report["dataset"]
           split = report["split"]
           test = report["heldout_test"]
           leakage = report["leakage_controls"]
+          selected = report["selection"]["selected"]
+          if report["schema_version"] != 2:
+              raise SystemExit("Return-risk evidence must use sealed protocol v2")
           if source["dataset_slug"] != "thedevastator/unlock-profits-with-e-commerce-sales-data":
               raise SystemExit("Unexpected primary return-risk source")
           if len(source["zip_sha256"]) != 64:
               raise SystemExit("Primary source SHA missing")
           if dataset["terminal_orders"] < 20000 or dataset["returned_to_seller"] < 500 or dataset["delivered_to_buyer"] < 15000:
               raise SystemExit(f"Primary terminal population unexpectedly small: {dataset}")
-          if test["n"] < 2000 or test["positives"] < 50:
-              raise SystemExit(f"Final chronological holdout too small: {test}")
+          if split["final_test"]["n"] < 4000 or split["final_test"]["returned_to_seller"] < 100:
+              raise SystemExit(f"Sealed final holdout too small: {split['final_test']}")
           for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision", "roc_auc"):
               value = test[metric]
               if not 0.0 <= value <= 1.0:
                   raise SystemExit(f"Invalid primary {metric}: {value}")
+          if selected["validation_f1"] <= 0 or selected["validation_precision"] <= 0 or selected["validation_recall"] <= 0:
+              raise SystemExit(f"A zero-usefulness validation model cannot be selected: {selected}")
           expected_controls = {
               "order_id_feature": False,
               "status_feature": False,
@@ -199,24 +204,25 @@ jobs:
               "duplicate_item_rows_split_across_sets": False,
               "target_encoding_train_only": True,
               "train_target_encoding_leave_one_out": True,
-              "test_used_for_model_selection": False,
+              "final_test_used_for_model_selection": False,
+              "synthetic_rows_or_smote": False,
           }
           if leakage != expected_controls:
               raise SystemExit(f"Leakage contract drifted: {leakage}")
-          if split["train"]["date_range"]["end"] > split["validation"]["date_range"]["start"]:
-              raise SystemExit("Primary train/validation chronology overlaps")
-          if split["validation"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
-              raise SystemExit("Primary validation/test chronology overlaps")
           if test["false_positive_order_gmv_at_risk_inr"] < 0 or test["missed_return_order_gmv_inr"] < 0:
               raise SystemExit("Primary monetary exposure is invalid")
           if report["false_positive_cost_disclosure"]["realized_profit_loss_identifiable_from_source"] is not False:
               raise SystemExit("Do not invent realized false-positive merchant profit cost")
-          print(json.dumps({"dataset": dataset, "selection": report["selection"]["selected"], "heldout_test": test, "ci95": report["heldout_ci95_bootstrap"]}, indent=2, sort_keys=True))
+          if test["precision"] <= test["prevalence"]:
+              raise SystemExit(f"Detector has no precision lift over base return rate: {test}")
+          if test["recall"] <= 0:
+              raise SystemExit("Detector must identify at least some held-out returns")
+          print(json.dumps({"dataset": dataset, "split": split, "selection": selected, "heldout_test": test, "ranking": report["ranking_checks"], "ci95": report["heldout_ci95_bootstrap"]}, indent=2, sort_keys=True))
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: codgate-primary-return-risk-evidence
-          path: artifacts/amazon-return-risk
+          name: codgate-primary-return-risk-evidence-v2
+          path: artifacts/amazon-return-risk-v2
           if-no-files-found: error
           retention-days: 30
 
