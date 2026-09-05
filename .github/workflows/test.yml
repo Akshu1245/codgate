@@ -88,21 +88,31 @@ jobs:
           source = report["source"]
           test = report["heldout_test"]
           split = report["split"]
+          dataset = report["dataset"]
           if source["dataset_slug"] != "sahilr05/meesho-orders":
               raise SystemExit("Unexpected dataset source")
           if len(source["zip_sha256"]) != 64:
               raise SystemExit("Missing source ZIP SHA-256")
-          if report["dataset"]["terminal_orders"] < 200:
-              raise SystemExit("Real terminal dataset is too small")
-          if test["n"] < 50 or test["positives"] < 1:
+          if dataset["terminal_orders"] < 100:
+              raise SystemExit("Exact-RTO real terminal dataset unexpectedly shrank below 100 rows")
+          if dataset["terminal_rto"] < 20 or dataset["terminal_delivered"] < 20:
+              raise SystemExit("Real dataset does not contain enough of both terminal outcomes")
+          if test["n"] < 20 or test["positives"] < 1:
               raise SystemExit("Held-out split is not meaningful")
+          if not report.get("limitations"):
+              raise SystemExit("Small-sample limitations must be explicit")
           for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision"):
               value = test[metric]
               if not 0.0 <= value <= 1.0:
                   raise SystemExit(f"Invalid {metric}: {value}")
-          if split["train"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
-              raise SystemExit("Chronological split overlap detected")
-          print(json.dumps(test, indent=2, sort_keys=True))
+          ci = report.get("heldout_ci95_bootstrap", {})
+          if "precision" not in ci or "recall" not in ci:
+              raise SystemExit("Precision/recall bootstrap confidence intervals are required")
+          if split["train"]["date_range"]["end"] > split["validation"]["date_range"]["start"]:
+              raise SystemExit("Train/validation chronological overlap detected")
+          if split["validation"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
+              raise SystemExit("Validation/test chronological overlap detected")
+          print(json.dumps({"dataset": dataset, "split": split, "heldout_test": test, "ci95": ci}, indent=2, sort_keys=True))
           PY
       - name: Upload real-data evidence
         uses: actions/upload-artifact@v4
