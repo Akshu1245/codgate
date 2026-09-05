@@ -1,150 +1,103 @@
 # CodGate — judge red-team
 
-This is the attack list we would use if we were reviewing CodGate for Razorpay. It is intentionally harsher than the README.
+This is the review we would apply before asking a Razorpay judge to trust the submission.
 
-## 1. “Where is the AI?”
+## 1. “What is the single qualifying loss class?”
 
-**Attack:** Policy v1.0 is deterministic. It is not a learned model.
+**Answer:** `RETURN_TO_SELLER` / returns. That is the label supported by the large public dataset. We do not call the 28,417-order benchmark COD-only because payment mode is absent. COD/RTO is a bounded checkout response/domain subset, supported separately by exact-COD and exact-RTO audit data.
 
-**Answer:** Correct. CodGate does not claim that the policy is an ML model. Magic Checkout already has RTO intelligence. CodGate is the **verifier/control plane after risk intelligence**: versioned policy, held-out economics, bounded intervention, repair proof and release governance. A money-moving rule should remain inspectable even when the upstream model changes.
+## 2. “Where is the AI/ML?”
 
-**Remaining production work:** bind the order contract and Risk Canary replay contract to Razorpay’s private RTO signals/model registry. The public repo cannot claim access to those interfaces.
+**Answer:** `/return-risk/score` runs the frozen logistic model selected on development/validation data. The exact learned encoding/scaler/coefficients are stored as hash-verified runtime chunks. The deterministic COD policy is a response/control layer, not the claimed model.
 
-## 2. “Doesn’t this benefit Razorpay only if another e-commerce company integrates CodGate?”
+## 3. “Did you tune on the final test until the number looked good?”
 
-**Attack:** A merchant-side COD gate creates indirect value. If merchants do not integrate it, Razorpay gets no new benefit.
+**Answer:** No. The first chronological probe exposed a bad selection method and was rejected. v2 created a new final population using stable SHA-256 order buckets before model selection. Model family, hyperparameters and threshold were selected from train/validation; the v2 final labels were not used for selection.
 
-**Mitigation built:** **Risk Canary is Razorpay-internal.** It sits in the RTO model/policy release path. Razorpay supplies paired current-vs-candidate decisions and observed fulfilment outcomes. Canary returns `SHIP / SHADOW / BLOCK_RELEASE`, ₹ error cost, 95% uncertainty, decision blast radius, merchant-slice regressions and a release receipt. No new e-commerce integration is required.
+## 4. “Are the metrics flattering?”
 
-**Direct company value:** a bad RTO release can false-block legitimate checkout traffic or miss RTO across merchants already on Razorpay. Canary can stop or shadow that release before rollout.
+**Answer:** No. Held-out precision is 11.21% and recall 23.20%. The relevant context is the 6.32% base return rate, giving 1.77× precision lift. We report confidence intervals and do not call this production accuracy.
 
-## 3. “Why not just look at precision/recall and ship?”
+## 5. “How big is the final evidence?”
 
-**Attack:** The ML team already has model metrics. A release verifier is redundant.
+**Answer:** 28,417 terminal unique orders total; sealed final holdout n=5,726 with 362 returns. Confusion matrix: TP 84, FP 665, FN 278, TN 4,699.
 
-**Answer:** Aggregate precision/recall do not answer whether the candidate changes 30% of production decisions, whether one merchant cohort absorbs the false blocks, whether the ₹ error cost is actually lower, or whether the apparent improvement is supported by enough outcomes.
+## 6. “Your model score says 0.0088. Is that a 0.88% probability?”
 
-**Built in v2:**
-- candidate/current TP/FP/FN/TN,
-- precision and Wilson 95% CI,
-- recall and Wilson 95% CI,
-- false-positive/false-negative rates,
-- false-block ₹ and missed-RTO ₹,
-- paired 95% interval for current→candidate cost delta,
-- `always allow` / `always force prepaid` trivial baselines,
-- merchant-segment false-block deltas,
-- low-sample slice warnings,
-- decision blast radius,
-- sealed replay SHA + release receipt.
+**Answer:** No. The selected logistic model uses balanced class weights, so the runtime calls the output `risk_score` and explicitly returns `score_is_calibrated_probability=false`. The threshold is a frozen decision score, not a customer-facing probability claim.
 
-A candidate can look better and still be forced to `SHADOW`.
+## 7. “Where is the false-positive cost?”
 
-## 4. “Can a tiny lucky sample authorize a global rollout?”
+**Answer:** The source directly supports **₹443,627 of false-positive order GMV exposed to intervention** on the holdout. That is not the same as lost profit. For actual cost, the endpoint accepts a merchant-approved `false_positive_cost_per_order_inr`; modeled held-out cost is `665 × unit cost`. With no merchant cost parameter, we refuse to invent a ₹ loss.
 
-**Attack:** A verifier is dangerous if five lucky orders can produce `SHIP`.
+## 8. “Are you secretly using post-outcome leakage?”
 
-**Mitigation built:** fail-closed evidence gates. `SHIP` requires at least **100 rows, 20 observed RTOs and 50 delivered orders**. If the candidate looks cheaper but the paired 95% cost interval crosses zero, it remains `SHADOW`.
+**Answer:** No. Order ID, final Status and courier outcome are forbidden features. Item rows are aggregated before splitting. Target encodings come from train only; training rows use leave-one-out encoding. There is no SMOTE or synthetic training expansion.
 
-Merchant-segment false-block guardrails require at least **20 delivered examples in that segment**. Smaller cohorts are printed as **LOW N** instead of converting noise into a confident percentage.
+## 9. “Why is there still COD/RTO everywhere?”
 
-## 5. “Is Canary secretly another RTO model?”
+**Answer:** It is the payment/control use case. A risky return can be routed to review or a governed COD policy; Risk Canary verifies candidate COD decision releases. But the qualifying detector's accuracy claim remains RETURN_TO_SELLER because that is what the primary dataset actually labels.
 
-**Attack:** You claim one loss class, but perhaps Canary contains a second classifier.
+## 10. “Do you have any exact-COD data?”
 
-**Answer:** No. Canary accepts only **precomputed** `current_decision` and `candidate_decision` plus observed outcomes. It never computes either risk decision. The candidate can be a model, threshold or ruleset owned by Razorpay. Canary verifies the release consequence.
+**Answer:** Yes, but only 47 terminal COD seller orders (42 delivered, 5 returned). We explicitly prevent that small slice from becoming the accuracy benchmark.
 
-There is still one public transaction policy: `app/policy.py` v1.0.
+## 11. “Do you have any exact-RTO external validation?”
 
-## 6. “Hard-coded rules will drift.”
+**Answer:** Yes. The Meesho source yields 138 terminal rows. Its held-out ROC-AUC is 0.4313 and precision is below its holdout prevalence, so the evidence gate returns `BLOCK_RELEASE`. Weak evidence is visible rather than massaged.
 
-**Attack:** Pincode/address rules become stale.
+## 12. “Can the ML model move money?”
 
-**Answer:** v1.0 is deliberately frozen because the public held-out evidence must be reproducible. A future policy/model should be a new version, first measured in shadow/replay and then passed through Risk Canary. v1.0 is not silently mutated to make metrics look better.
+**Answer:** No. It is `advisory_only`. It returns `FLAG_RETURN_RISK` or `STANDARD_FLOW`. Any COD checkout action is a separate deterministic path. SHADOW never creates a Payment Link; enforce mode is limited to Razorpay test keys/simulation in the public repo.
 
-**Remaining production work:** internal policy/model registry, owner, approval, expiry/review date and rollback controls.
+## 13. “Can retries create duplicate side effects?”
 
-## 7. “Your Track 02 held-out set is only 80 rows.”
+**Answer:** `Idempotency-Key` replays the original result for the same request and rejects a changed request with the same key.
 
-**Attack:** 80 rows are too small for a production accuracy claim.
+## 14. “Can a tiny replay authorize SHIP?”
 
-**Answer:** Agree. The 80-row file is public prototype evidence for reproducibility and honest false-positive/false-negative economics. It is **not** presented as Razorpay production accuracy. Its labels are frozen and identified by SHA-256.
+**Answer:** Risk Canary has minimum sample gates and fails closed to SHADOW. Slice guardrails also require minimum delivered examples before a slice can govern release.
 
-**Production distinction:** Risk Canary should run on a much larger Razorpay-owned paired replay/shadow window. It refuses small windows from authorizing `SHIP`.
+## 15. “Why not just ship based on precision/recall?”
 
-## 8. “Why don’t you train a model and beat the public RTO repos?”
+**Answer:** A model can improve aggregate metrics while changing too much checkout traffic or harming a merchant cohort. Canary measures paired current/candidate effects, uncertainty, blast radius, slice regressions and replay identity before returning SHIP/SHADOW/BLOCK_RELEASE.
 
-**Attack:** Public competitors report stronger headline precision/recall from much larger synthetic/Kaggle-derived datasets.
+## 16. “Is the audit real?”
 
-**Answer:** Inventing a larger synthetic dataset to claim a higher score would not make this a stronger Razorpay submission. Razorpay already has RTO intelligence and private data that a public team cannot reproduce. CodGate competes on **verification and trustworthy execution**, not on pretending its 80-row rule policy is a superior production classifier.
+**Answer:** Decision/outcome JSONL rows are SHA-256 chained and independently reverified. Local JSONL is an MVP sink; production should use Razorpay durable internal event/audit infrastructure.
 
-The public benchmark is intentionally modest and auditable; the production integration is designed to verify Razorpay’s stronger upstream candidate rather than replace it.
+## 17. “What is synthetic?”
 
-## 9. “FORCE_PREPAID can destroy conversion.”
+- `data/heldout.csv` n=80: deterministic software regression fixture.
+- canonical ALLOW/FORCE/STOP orders: behavior fixtures.
+- Canary good/wide/bad: release-path fixtures.
+- pincode severity bands: deterministic control fixture, no claimed empirical rate.
+- ₹180/₹250: scenario constants retained for regression paths, not merchant economics.
 
-**Attack:** A false block creates customer friction and lost margin.
+None of those is the primary Track 02 metric claim.
 
-**Answer:** The held-out report explicitly prices false blocks. `shadow` mode can measure the counterfactual without issuing a link. `enforce` is separate from the pure decision.
+## 18. “What would prevent production deployment tomorrow?”
 
-**Additional mitigation:** Counterfactual Risk Repair distinguishes blocks caused by customer-correctable input quality from structural/historical risk.
+- Public data is not Razorpay private traffic.
+- Detector lift is useful for a prototype, not enough to claim production readiness.
+- No private Magic Checkout/RTO model-registry integration.
+- Merchant-specific margin/conversion economics are not available publicly.
+- Local audit/idempotency stores need durable infrastructure.
+- Service auth, tenancy, signed webhooks, model ownership/approvals and rollback controls remain production work.
 
-## 10. “Is Risk Repair just gaming the score?”
+## 19. “Why should this qualify instead of a model with a prettier headline?”
 
-**Attack:** A repair engine could edit history until the order passes.
+Because Track 02 explicitly asks for **honest** metrics and false-positive cost. CodGate provides a real detector with a sealed 5,726-order holdout, base-rate lift, confidence intervals, source/model hashes and reproducible CI; it then demonstrates the hard payments behavior—weak external evidence is blocked and no unverified model is allowed to move money.
 
-**Mitigation built:** Risk Repair never changes `prior_rto_count`, account age, order count, prepaid history, amount or pincode risk band to cross the threshold. Its only scored repair class is **address completion**, passed back through the same `decide()`.
-
-The canonical Siwan order is the proof: **145 → 97**, still `FORCE_PREPAID`, status `STRUCTURAL_RISK`.
-
-## 11. “What stops a customer lying about a corrected address?”
-
-**Answer:** Nothing in this public prototype proves physical address truth, so Risk Repair **does not automatically flip the original decision**. It returns the criterion and requires a re-score after correction.
-
-**Remaining production work:** accept repaired fields only from trusted checkout/address-validation sources and bind provenance to the receipt.
-
-## 12. “Retries can issue two Payment Links.”
-
-**Mitigation built:** `Idempotency-Key`. Same key + same request replays original receipt/link metadata with no duplicate decision row. Same key + changed request returns HTTP 409.
-
-## 13. “Your JSONL audit can be edited.”
-
-**Mitigation built:** new decision/outcome rows are SHA-256 chained. `/audit/verify` and `/outcomes/verify` recompute the chains. Existing pre-chain demo rows remain honestly marked as legacy.
-
-**Remaining production work:** use Razorpay’s durable internal event/audit infrastructure. Local JSONL is an MVP sink.
-
-## 14. “Can anyone forge a simulated paid link?”
-
-**Mitigation built:** only simulated IDs actually issued in CodGate’s audit can be marked paid. Unknown simulated IDs return 404; non-simulated IDs cannot be manually marked paid.
-
-## 15. “Why Payment Links?”
-
-**Answer:** It is the bounded intervention after a COD policy block: collect before shipping rather than cancel the customer. In real Razorpay test mode, the decision receipt is placed in Payment Link reference/notes for traceability.
-
-## 16. “Why not put this inside Magic Checkout?”
-
-**Answer:** That may be the correct production destination. CodGate is not asking Razorpay to operate another customer-facing dashboard forever. It demonstrates a control-plane pattern: versioned action policy, held-out economics, bounded repair, release verification and evidence receipts. If accepted, the natural destination is Magic Checkout/RTO operations and the internal model-release path.
-
-## 17. “Can you reproduce all of your claims without the UI?”
-
-**Mitigation built:**
+## 20. Reproduce it
 
 ```bash
 pytest -q
-python -m app.score
 python -m app.preflight
+pip install -r requirements-evidence.txt
+python -m evidence.amazon_return_risk_v2
+python -m evidence.build_real_rto
+python -m evidence.amazon_cod_audit
 ```
 
-`app.preflight` fails if the canonical ALLOW/FORCE/STOP cases, exact frozen metric block/SHA, canonical 145→97 structural repair, or `SHIP / SHADOW / BLOCK_RELEASE` verifier cases drift.
-
-## 18. “What would stop us shipping this tomorrow?”
-
-- No private Magic Checkout/RTO feature or model-registry integration in the public repo.
-- n=80 transaction evaluation is prototype evidence, not production performance.
-- Canary’s 200-row judge fixtures are synthetic behavior tests, not production accuracy evidence.
-- Real Canary rollout needs a large, correctly joined Razorpay-owned replay/shadow window.
-- No Razorpay service-to-service auth or tenancy.
-- Local JSONL/idempotency stores should become durable infrastructure.
-- Policy/model ownership, approvals and rollback should use internal controls.
-- Real Payment Link webhooks should close payment state.
-- Risk Repair needs trusted corrected-field provenance.
-
-Those limitations are disclosed because Track 02 asks for **honest** risk evidence, not a production claim manufactured from demo data.
+The submission package is built only after backend, evidence, browser and ZIP-integrity gates pass.
