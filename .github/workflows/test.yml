@@ -52,3 +52,33 @@ jobs:
           node --check static/ops.js
           node --check static/repair.js
           node --check static/canary.js
+      - name: Check six-surface console JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path("static/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>([\s\S]*?)</script>", html)
+          if not scripts:
+              raise SystemExit("No inline console script found")
+          Path("/tmp/codgate-console.js").write_text(scripts[-1], encoding="utf-8")
+          PY
+          node --check /tmp/codgate-console.js
+      - name: Build verified submission ZIP
+        if: matrix.python-version == '3.12'
+        run: |
+          rm -f codgate-submission.zip
+          zip -r codgate-submission.zip \
+            app static data docs tests .github \
+            README.md requirements.txt Procfile pytest.ini .gitignore \
+            -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl"
+          unzip -t codgate-submission.zip
+      - name: Upload verified submission ZIP
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: codgate-submission
+          path: codgate-submission.zip
+          if-no-files-found: error
+          retention-days: 14
