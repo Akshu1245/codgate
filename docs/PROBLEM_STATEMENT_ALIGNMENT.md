@@ -1,6 +1,6 @@
-# Track 02 — AI Risk Manager: exact problem-statement alignment
+# Track 02 — AI Risk Manager: problem-statement alignment
 
-This document is the acceptance checklist for CodGate. It uses the supplied Track 02 wording as the source of truth and separates what the public prototype proves from what it does not prove.
+This checklist uses the supplied Track 02 wording as the acceptance bar and separates real evidence from deterministic regression fixtures.
 
 ## Supplied problem statement
 
@@ -10,116 +10,117 @@ This document is the acceptance checklist for CodGate. It uses the supplied Trac
 >
 > Build a working detector, verifier or auto-responder for one class of loss, with measured precision and recall on a held-out test set.
 >
-> **why now**
->
-> AI-enabled fraud is hitting Indian BFSI while returns and chargebacks quietly eat margin. This track surfaces the risk and ML minded builders the others miss.
->
-> **example directions**
->
-> - Chargeback evidence responder
-> - Return-risk scorer
-> - Fraud-spike detector
-> - Abuse-ring sentinel
->
 > **the bar**
 >
 > Honest metrics including false-positive cost. Strictly defense-only: anything offense-capable is disqualifying.
 
-## CodGate claim in one sentence
+## CodGate claim
 
-**CodGate is a defense-only COD Return-to-Origin (RTO) decision verifier and bounded policy executor that measures held-out decision quality and error cost, prevents unsafe risk releases from changing checkout, and can force prepaid only after the governed decision.**
+**CodGate is a defense-only COD Return-to-Origin (RTO) evidence/release verifier with bounded checkout action. It reproduces held-out evidence, blocks weak candidates, verifies paired current-vs-candidate releases, and keeps the action trail auditable.**
 
-## Requirement-by-requirement qualification
+## Requirement-by-requirement audit
 
-| Supplied requirement | CodGate implementation | Evidence | Status |
-|---|---|---|---|
-| Stop merchant loss | Targets COD RTO, where an undelivered COD order creates return/logistics loss and margin leakage | `README.md`, `app/policy.py`, held-out outcomes | MATCH |
-| One class of loss | Only **COD Return-to-Origin (RTO)** is submitted | preflight reports `loss class COD_RTO` | MATCH |
-| Working detector, verifier or auto-responder | Primary claim is **verifier + bounded executor**; transaction policy returns `ALLOW_COD / FORCE_PREPAID / STOP`; Risk Canary verifies candidate RTO releases | `/orders/score`, `/release/check`, browser judge journey | MATCH |
-| Measured precision | Frozen held-out v1.0: **74.2%** | `python -m app.score`; TP 23, FP 8 | MATCH |
-| Measured recall | Frozen held-out v1.0: **60.5%** | `python -m app.score`; TP 23, FN 15 | MATCH |
-| Held-out test set | `data/heldout.csv`, frozen at n=80 and protected by exact SHA-256 | SHA `327f392d...e20a`; CI fails on drift | MATCH, PROTOTYPE-SCALE |
-| Honest false-positive cost | **8 false blocks × ₹180 modeled unit cost = ₹1,440** | `app/score.py`, frozen metrics | MATCH WITH DISCLOSED ASSUMPTION |
-| Honest false-negative cost | **15 missed RTO × ₹250 modeled unit cost = ₹3,750** | `app/score.py`, frozen metrics | EXTRA TRANSPARENCY |
-| Strictly defense-only | No attack generation, credential abuse, bypass tooling, fraud simulation for exploitation, or offensive actions. Outputs only allow/restrict/stop COD and verify risk releases | code surface + preflight | MATCH |
-| Working intervention | In `enforce`, only `FORCE_PREPAID` can create a Razorpay **test** Payment Link or explicit simulation. In `shadow`, no Payment Link is created | `/orders/score`, `app/payment.py`, browser E2E | MATCH |
+| Requirement | CodGate evidence | Status |
+|---|---|---|
+| One class of loss | COD Return-to-Origin (RTO) only | MATCH |
+| Working detector / verifier / auto-responder | Primary claim is **verifier + bounded executor**; `/evidence/real-rto` and `/release/check` gate releases | MATCH |
+| Held-out test set | Public Meesho supplier-order data; chronological 60/20/20; untouched final test n=28, RTO=8 | MATCH, SMALL PUBLIC SAMPLE |
+| Measured precision | **23.08%**, TP 3 / FP 10 on the untouched real-data holdout | MATCH |
+| Measured recall | **37.50%**, TP 3 / FN 5 on the untouched real-data holdout | MATCH |
+| Honest weak-result handling | ROC-AUC 0.4313; precision below 28.57% holdout prevalence; verdict **`BLOCK_RELEASE`** | MATCH |
+| False-positive cost awareness | Paired Canary prices false blocks when an approved cost model is supplied; public ₹180/₹250 values are labeled scenario assumptions | MATCH WITH DISCLOSED ASSUMPTION |
+| Defense-only | No offensive/bypass capability; outputs only restrict/verify COD risk | MATCH |
+| Working intervention | Shadow mode cannot create Payment Links; enforce mode supports Razorpay test links after a governed `FORCE_PREPAID` decision | MATCH |
+| Auditability | Decision/repair/evidence/release receipts plus chained decision/outcome ledgers | MATCH |
 
-## Critical honesty disclosures
+## Real held-out evidence
 
-### 1. The n=80 benchmark is prototype evidence
+```text
+Source             sahilr05/meesho-orders
+Source ZIP SHA     bd8dc168d218c403a7519f42364f307fbff26ad56adced18668e79cb9e171b6e
+Terminal outcomes  138
+RTO / Delivered    28 / 110
+Train / Val / Test 82 / 28 / 28
+Test positives     8
+Precision          23.08%
+Recall             37.50%
+F1                 0.2857
+PR-AUC              0.3656
+ROC-AUC             0.4313
+TP / FP / FN / TN  3 / 10 / 5 / 10
+Verdict             BLOCK_RELEASE
+```
 
-The public held-out file is intentionally small. Its precision and recall are real calculations over that frozen file, but they are **not production-accuracy claims** and must never be presented as Razorpay-scale model performance.
+The pipeline uses terminal `RTO_COMPLETE` vs `DELIVERED`, excludes intermediate states and post-outcome fields, uses chronological splitting with no shuffle/SMOTE/synthetic expansion, and chooses the threshold on validation only.
 
-For a production decision, CodGate's Risk Canary expects a much larger Razorpay-owned replay/shadow window joined to trusted fulfilment outcomes.
+The final test has already been observed. It is **not** repeatedly tuned against to manufacture a higher score.
 
-### 2. ₹180 and ₹250 are modeled unit-cost assumptions
+## What is not submitted as real evidence
 
-The frozen prototype uses:
+### Handcrafted n=80 policy fixture
 
-- false-positive / false-block unit cost = **₹180**,
-- false-negative / missed-RTO unit cost = **₹250**.
+`data/heldout.csv` is a handcrafted synthetic regression set. Its historical 74.2% precision / 60.5% recall remains in CI only so deterministic policy changes are detected. It is not the Track 02 real-world accuracy claim.
 
-These are **evaluation assumptions**, not claims that every merchant actually loses exactly those amounts. A real merchant/Razorpay deployment must replace them with an approved internal cost model. The purpose of the public benchmark is to show that error cost is explicitly priced instead of hidden.
+### Pincode severity bands
 
-### 3. CodGate does not claim to replace Razorpay's private RTO model
+The frozen location bands are deterministic control fixtures. The runtime now exposes `pin_rto_rate = null`; no public empirical pincode RTO rate is claimed.
 
-The strongest product claim is governance: a candidate RTO signal should not change money-moving checkout behaviour until error cost, recall, merchant slices, uncertainty and blast radius clear a recorded release gate.
+### Public ₹ error constants
 
-Risk Canary therefore consumes paired current/candidate decisions. It does not pretend that the public repository contains Razorpay's private model or traffic.
+₹180 false-block and ₹250 missed-RTO are deterministic scenario assumptions, not measured merchant economics. `/metrics/live` labels them as such. Production use requires an approved merchant/Razorpay cost model.
 
-## Why this remains one problem, not feature sprawl
+### Canary good/wide/bad cases
 
-- **Decision Desk**: governs one COD-RTO transaction decision.
-- **Customer Correctability**: reduces false blocks for the same COD-RTO control without altering structural history.
-- **Risk Canary**: prevents a worse COD-RTO model/rules release from reaching checkout.
-- **Audit Terminal**: proves what the COD-RTO control did.
-- **Integration Simulator**: demonstrates the same COD-RTO path from checkout to governed action.
+`/release/demo/good`, `/wide` and `/bad` are synthetic code-path regression fixtures. They prove that the verifier can return all three verdicts; they do not prove model accuracy.
 
-None of these are separate fraud products. All are safety layers around the same merchant-loss class.
+## Why a weak model still demonstrates a working solution
 
-## Disqualification check — defense only
+The Track accepts a **verifier**. The public candidate is objectively weak, and CodGate's working behavior is to stop it:
 
-CodGate must fail this submission bar if any future change adds offense-capable functionality. Specifically, the project must not add:
+1. reproduce the source and held-out metrics,
+2. verify confusion-matrix consistency and provenance SHA,
+3. compare ROC-AUC against the 0.5 ranking baseline,
+4. compare flagged precision against holdout prevalence,
+5. return `BLOCK_RELEASE`,
+6. surface the reasons in the Risk Canary UI,
+7. prevent standalone evidence from ever authorizing `SHIP`.
 
-- instructions or tooling to commit payment fraud,
-- methods to bypass fraud/RTO controls,
-- stolen credential or payment-instrument workflows,
-- attack automation against merchants, payment systems or customers,
-- abuse-ring creation/evasion tooling,
-- adversarial examples intended to defeat a live risk system.
+A strong future candidate would still be capped at `SHADOW` until a paired CURRENT-vs-CANDIDATE replay with observed fulfilment outcomes clears Risk Canary.
 
-Allowed scope is defensive detection/verification, safer rollout, customer-correctable remediation, audit and bounded checkout response.
+## One problem, six surfaces
 
-## Judge-verifiable evidence
+- **Control Room** — operational state and release/evidence state.
+- **Decision Desk** — bounded COD action path.
+- **Customer Correctability** — legitimate correction vs structural risk.
+- **Risk Canary** — real evidence gate + paired release verifier.
+- **Audit Terminal** — decision/outcome integrity.
+- **Integration Simulator** — end-to-end shadow path.
 
-The CI acceptance path is:
+All six surfaces serve the same COD-RTO control; none is a separate fraud product.
+
+## Judge-verifiable CI path
 
 ```bash
 pytest -q
-python -m app.score
 python -m app.preflight
+pip install -r requirements-evidence.txt
+python -m evidence.build_real_rto
 ```
 
-It additionally runs a real Chromium journey that clicks through the rendered console and verifies:
+GitHub Actions additionally:
 
-1. operational readiness,
-2. a canonical `FORCE_PREPAID` decision in **SHADOW** mode,
-3. no Payment Link in shadow,
-4. structural-risk correctability proof (`145 → 97`, still blocked),
-5. Canary `SHIP / SHADOW / BLOCK_RELEASE`,
-6. audit/outcome chain verification,
-7. the complete Integration Simulator trace,
-8. desktop and mobile rendering smoke checks,
-9. zero browser page/console errors.
+1. tests Python 3.12 and 3.13,
+2. checks JavaScript syntax,
+3. downloads the external dataset and regenerates evidence,
+4. compares regenerated counts/metrics/CIs/source SHA with the frozen runtime aggregate,
+5. asserts the weak public candidate is `BLOCK_RELEASE`,
+6. runs a real Chromium desktop/mobile judge journey,
+7. builds the submission ZIP only after all gates pass.
 
-A submission ZIP is generated only after those gates pass.
+## Final positioning
 
-## Final Track 02 positioning
+Do not pitch CodGate as “our public model predicts RTO accurately.” The measured evidence does not support that.
 
-Do not pitch CodGate as “an AI that predicts fraud.” That is broader and less defensible than what the repository proves.
+Pitch the implemented claim:
 
-Pitch it as:
-
-> **CodGate is the governance gate between RTO intelligence and checkout action. It verifies one loss class—COD RTO—with frozen precision/recall, explicit false-positive cost, safe shadow-to-enforce rollout, customer-correctable false-block analysis, and auditable release receipts.**
-
-That statement matches the supplied Track 02 bar without inventing production evidence.
+> **CodGate is the governance gate between RTO intelligence and checkout action. When real held-out evidence is weak, it blocks the release; when evidence improves, it still requires paired replay, rollout guardrails and an auditable receipt before checkout behavior can change.**
