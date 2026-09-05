@@ -76,6 +76,18 @@
   if (notice && notice.parentNode) notice.parentNode.insertBefore(panel, notice.nextSibling);
   else page.appendChild(panel);
 
+  document.title = "CodGate · Return Risk Governance";
+  const brandMeta = document.querySelector(".brand span");
+  if (brandMeta) brandMeta.textContent = "Return Risk Governance Engine";
+  const controlHero = page.querySelector(".hero");
+  if (controlHero) {
+    const eyebrow = controlHero.querySelector(".eyebrow");
+    const heading = controlHero.querySelector("h2");
+    const paragraph = controlHero.querySelector("p");
+    if (eyebrow) eyebrow.textContent = "Razorpay internal return-risk operations";
+    if (heading) heading.textContent = "Govern when return-risk intelligence is allowed to change checkout.";
+    if (paragraph) paragraph.textContent = "CodGate measures one merchant-loss class—return-to-seller—on sealed real held-out data, then keeps the learned signal advisory until checkout and release controls have independently cleared it.";
+  }
   const sidefoot = document.querySelector(".sidefoot");
   if (sidefoot) sidefoot.innerHTML = "Track 02 · AI Risk Manager<br>Primary loss: return-to-seller<br>COD RTO · governed checkout action";
 
