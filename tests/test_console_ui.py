@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.repair_app import app
 
 
 client = TestClient(app)
+ROOT = Path(__file__).resolve().parents[1]
 
 
 SURFACES = [
@@ -48,3 +51,13 @@ def test_console_wires_to_existing_governance_contracts():
     # Simulator must stay side-effect safe by using shadow mode.
     assert "X-CodGate-Mode':'shadow'" in body
     assert "Shadow mode creates no Payment Link" in body
+
+
+def test_legacy_ops_wrapper_cannot_override_new_console_execution_mode():
+    script = (ROOT / "static" / "ops.js").read_text(encoding="utf-8")
+    guard = 'if (!document.getElementById("gate")) return;'
+    wrapper = "window.fetch = async"
+
+    assert guard in script
+    assert wrapper in script
+    assert script.index(guard) < script.index(wrapper)
