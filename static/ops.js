@@ -1,4 +1,9 @@
 (() => {
+  // This script belongs to the retired four-tab console. The current six-surface
+  // operations console owns its execution-mode headers directly. Never wrap
+  // fetch() unless the legacy Gate surface is actually present.
+  if (!document.getElementById("gate")) return;
+
   const originalFetch = window.fetch.bind(window);
   const validModes = new Set(["enforce", "shadow"]);
   let executionMode = localStorage.getItem("codgate:execution-mode") || "enforce";
