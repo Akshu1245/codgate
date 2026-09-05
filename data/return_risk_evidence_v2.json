@@ -1,0 +1,96 @@
+{
+  "claim": "Real public Amazon India return-risk detector prototype; not Amazon/Razorpay production accuracy",
+  "dataset": {
+    "delivered_to_buyer": 26566,
+    "return_prevalence": 0.0651370658408699,
+    "returned_to_seller": 1851,
+    "terminal_orders": 28417
+  },
+  "false_positive_cost_disclosure": {
+    "production_requirement": "merchant must supply approved margin/conversion cost parameters before ₹ profit-loss claims are enabled",
+    "realized_profit_loss_identifiable_from_source": false,
+    "source_derived_exposure": "false_positive_order_gmv_at_risk_inr"
+  },
+  "heldout_ci95_bootstrap": {
+    "precision": [0.09002568555892655, 0.13443997260289478],
+    "recall": [0.18787834997372568, 0.2760610069255311]
+  },
+  "heldout_test": {
+    "average_precision": 0.09117073676990356,
+    "average_precision_lift_vs_prevalence": 1.44210949929411,
+    "balanced_accuracy": 0.5540347765541507,
+    "f1": 0.15121512151215122,
+    "false_positive_order_gmv_at_risk_inr": 443627.0,
+    "fn": 278,
+    "fp": 665,
+    "intervention_rate": 0.13080684596577016,
+    "missed_return_order_gmv_inr": 187138.0,
+    "n": 5726,
+    "positives": 362,
+    "precision": 0.11214953271028037,
+    "precision_lift_vs_prevalence": 1.7739453709918933,
+    "prevalence": 0.06322039818372337,
+    "recall": 0.23204419889502761,
+    "roc_auc": 0.5944018543924918,
+    "threshold": 0.0087817746516351,
+    "tn": 4699,
+    "tp": 84
+  },
+  "leakage_controls": {
+    "courier_status_feature": false,
+    "duplicate_item_rows_split_across_sets": false,
+    "final_test_used_for_model_selection": false,
+    "order_id_feature": false,
+    "status_feature": false,
+    "synthetic_rows_or_smote": false,
+    "target_encoding_train_only": true,
+    "train_target_encoding_leave_one_out": true
+  },
+  "limitations": [
+    "Public Amazon India marketplace dataset; not Razorpay-owned production traffic.",
+    "Large dataset exposes return-to-seller outcome but not payment mode, so final detector loss class is RETURN_TO_SELLER rather than COD-only RTO.",
+    "Exact COD domain evidence is audited separately on the 47-row Boss Leathers slice and is never used as the accuracy benchmark.",
+    "False-positive GMV exposure is real source amount; realized merchant margin loss is intentionally not fabricated."
+  ],
+  "loss_class": "RETURN_TO_SELLER",
+  "protocol_status": "final holdout v2 is sealed by stable order-id hash before model selection",
+  "ranking_checks": {
+    "top_10_percent": {"fraction": 0.1, "lift_vs_prevalence": 1.766721626025667, "orders": 573, "precision": 0.11169284467713787, "recall": 0.17679558011049723, "returns_captured": 64},
+    "top_20_percent": {"fraction": 0.2, "lift_vs_prevalence": 1.5886752394508914, "orders": 1145, "precision": 0.10043668122270742, "recall": 0.31767955801104975, "returns_captured": 115},
+    "top_5_percent": {"fraction": 0.05, "lift_vs_prevalence": 1.8804234439593555, "orders": 286, "precision": 0.11888111888111888, "recall": 0.09392265193370165, "returns_captured": 34}
+  },
+  "runtime_model_compressed_sha256": "8477cab6ab9007a26c070faaf8c47916258b8ef98bf9bc1d61c839989e1ffb28",
+  "runtime_model_encoding": "base64(xz(JSON)); compact keys documented in app/return_risk_runtime.py",
+  "runtime_model_sha256": "ced7e510515cc54ab874f598c4999c6c407d76fce36dccc007d114f128ccd754",
+  "schema_version": 2,
+  "selection": {
+    "criterion": "validation F1 first, then PR-AUC/ROC-AUC/precision/recall; final-test labels never consulted",
+    "selected": {
+      "alpha": 5.0,
+      "config": {"C": 0.2, "class_weight": "balanced"},
+      "family": "logistic",
+      "threshold": 0.0087817746516351,
+      "validation_average_precision": 0.08499848240582683,
+      "validation_f1": 0.14536340852130325,
+      "validation_intervention_rate": 0.1472027972027972,
+      "validation_precision": 0.10332541567695962,
+      "validation_recall": 0.24507042253521127,
+      "validation_roc_auc": 0.5783429374007324
+    }
+  },
+  "source": {
+    "archive_member_count": 7,
+    "dataset_page": "https://www.kaggle.com/datasets/thedevastator/unlock-profits-with-e-commerce-sales-data/data",
+    "dataset_slug": "thedevastator/unlock-profits-with-e-commerce-sales-data",
+    "member": "Amazon Sale Report.csv",
+    "raw_member_rows": 128975,
+    "zip_bytes": 6634810,
+    "zip_sha256": "2d174af66d3390f6bdd157fec4e29e076e3454ed6935f124510ccc66f85c459a"
+  },
+  "split": {
+    "final_test": {"date_range": {"end": "2022-06-26T00:00:00", "start": "2022-03-31T00:00:00"}, "delivered_to_buyer": 5364, "n": 5726, "returned_to_seller": 362},
+    "method": "stable SHA-256 order-level buckets: 20% sealed final test; remaining development 75/25 train/validation",
+    "train": {"date_range": {"end": "2022-06-26T00:00:00", "start": "2022-03-31T00:00:00"}, "delivered_to_buyer": 15837, "n": 16971, "returned_to_seller": 1134},
+    "validation": {"date_range": {"end": "2022-06-26T00:00:00", "start": "2022-03-31T00:00:00"}, "delivered_to_buyer": 5365, "n": 5720, "returned_to_seller": 355}
+  }
+}
