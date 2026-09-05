@@ -21,7 +21,7 @@ def test_five_minute_judge_journey(monkeypatch, tmp_path):
     monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
     monkeypatch.delenv("RAZORPAY_KEY_SECRET", raising=False)
 
-    # 01 — veteran Bengaluru order: policy allows COD and needs no repair.
+    # 01 — deterministic policy regression: veteran Bengaluru order allows COD.
     allow = client.post("/orders/score", json=_case("allow"), headers={"X-CodGate-Mode": "enforce"})
     assert allow.status_code == 200
     allow_body = allow.json()
@@ -29,14 +29,15 @@ def test_five_minute_judge_journey(monkeypatch, tmp_path):
     assert allow_body["points"] == 0
     assert allow_body["risk_repair"]["status"] == "ALREADY_SAFE"
 
-    # 02 — canonical Siwan order: block, issue explicit simulated link, and prove
-    # that even legitimate address completion cannot erase structural risk.
+    # 02 — deterministic policy regression: high-risk case forces prepaid and the
+    # explicit simulated provider proves action wiring without pretending CI is live money.
     force = client.post("/orders/score", json=_case("force"), headers={"X-CodGate-Mode": "enforce"})
     assert force.status_code == 200
     force_body = force.json()
     assert force_body["decision"] == "FORCE_PREPAID"
     assert force_body["points"] == 145
     assert force_body["payment_link"] == "plink_SIMULATED_ord_siwan_temple_01"
+    assert force_body["payment_link_mode"] == "simulated"
     assert force_body["risk_repair"]["status"] == "STRUCTURAL_RISK"
     assert force_body["risk_repair"]["best_points"] == 97
     assert force_body["risk_repair"]["best_decision"] == "FORCE_PREPAID"
@@ -79,13 +80,23 @@ def test_five_minute_judge_journey(monkeypatch, tmp_path):
     assert repairable_body["risk_repair"]["best_decision"] == "ALLOW_COD"
     assert repairable_body["payment_link"] is None
 
-    # Frozen benchmark and integrity surfaces still answer after the whole flow.
+    # Real public-data evidence is the primary benchmark. The measured candidate
+    # is weak, so the correct working behavior is to block its release.
     metrics = client.get("/metrics").json()
-    assert metrics["precision"] == 0.7419354838709677
-    assert metrics["recall"] == 0.6052631578947368
-    assert metrics["false_block_inr"] == 1440
-    assert metrics["missed_rto_inr"] == 3750
-    assert metrics["sha_matches"] is True
+    primary = metrics["primary_evidence"]
+    assert primary["verdict"] == "BLOCK_RELEASE"
+    assert primary["dataset"]["terminal_orders"] == 138
+    assert primary["heldout_test"]["tp"] == 3
+    assert primary["heldout_test"]["fp"] == 10
+    assert primary["heldout_test"]["fn"] == 5
+    assert primary["heldout_test"]["tn"] == 10
+    assert primary["heldout_test"]["precision"] == 3 / 13
+    assert primary["heldout_test"]["recall"] == 3 / 8
+
+    # The old 80-row set remains only to catch deterministic policy drift.
+    fixture = metrics["regression_fixture"]
+    assert fixture["classification"] == "handcrafted_synthetic_regression_fixture"
+    assert fixture["sha_matches"] is True
 
     audit = client.get("/audit/verify").json()
     assert audit["verified"] is True
