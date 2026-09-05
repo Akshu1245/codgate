@@ -52,3 +52,16 @@ jobs:
           node --check static/ops.js
           node --check static/repair.js
           node --check static/canary.js
+      - name: Check six-surface console JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path("static/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>([\s\S]*?)</script>", html)
+          if not scripts:
+              raise SystemExit("No inline console script found")
+          Path("/tmp/codgate-console.js").write_text(scripts[-1], encoding="utf-8")
+          PY
+          node --check /tmp/codgate-console.js
