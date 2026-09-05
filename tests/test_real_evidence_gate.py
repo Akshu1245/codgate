@@ -47,6 +47,50 @@ def test_evidence_api_returns_same_fail_closed_verdict():
     assert body["provenance"]["zip_sha256"] == SOURCE_SHA
 
 
+def test_deployed_metrics_are_real_evidence_first():
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert "precision" not in body
+    assert body["primary_evidence"]["verdict"] == "BLOCK_RELEASE"
+    assert body["primary_evidence"]["heldout_test"]["precision"] == pytest.approx(3 / 13)
+    assert body["primary_evidence"]["provenance"]["zip_sha256"] == SOURCE_SHA
+
+    fixture = body["regression_fixture"]
+    assert fixture["classification"] == "handcrafted_synthetic_regression_fixture"
+    assert fixture["claim_allowed"] == "deterministic software regression only"
+    assert "production accuracy" in fixture["claim_forbidden"]
+    assert fixture["precision"] == pytest.approx(0.7419354838709677)
+    assert fixture["cost_values"].startswith("assumptions")
+
+
+def test_synthetic_csv_endpoint_is_explicitly_classified():
+    response = client.get("/data/heldout.csv")
+    assert response.status_code == 200
+    assert response.headers["X-CodGate-Data-Class"] == "handcrafted-synthetic-regression-fixture"
+    assert response.headers["X-CodGate-Claim-Scope"] == "software-regression-only"
+
+
+def test_live_rupee_cost_is_labeled_assumption():
+    response = client.get("/metrics/live")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cost_model"]["classification"] == "assumption"
+    assert body["cost_model"]["measured_merchant_economics"] is False
+    assert body["cost_model"]["false_block_inr_per_case"] == 180
+    assert body["cost_model"]["missed_rto_inr_per_case"] == 250
+
+
+def test_ops_status_exposes_release_block_separately_from_service_health():
+    response = client.get("/ops/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["release_authorized"] is False
+    assert body["primary_evidence"]["verdict"] == "BLOCK_RELEASE"
+    assert body["regression_fixture"]["integrity_only"] is True
+
+
 def test_standalone_evidence_can_never_ship_even_if_metrics_are_good():
     report = copy.deepcopy(load_real_evidence())
     report["dataset"]["terminal_orders"] = 1000
