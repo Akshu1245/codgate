@@ -280,16 +280,16 @@ def add_asof_history_features(orders: pd.DataFrame) -> pd.DataFrame:
             customer_tenure_days=tenure,
             days_since_last_order=since_last,
             avg_prior_order_value=avg_prior,
-            customer_known_return_events=known_returns,
-            customer_known_return_rate=customer_known_rate,
-            customer_known_return_value=float(customer_known_return_value[cust]),
-            customer_had_known_return=int(known_returns > 0),
-            product_known_return_rate_mean=float(np.mean(sku_rates)) if sku_rates else 0.0,
-            product_known_return_rate_max=float(np.max(sku_rates)) if sku_rates else 0.0,
+            customer_prior_adverse_events=known_returns,
+            customer_prior_adverse_rate=customer_known_rate,
+            customer_prior_adverse_value=float(customer_known_return_value[cust]),
+            customer_had_prior_adverse_event=int(known_returns > 0),
+            product_prior_adverse_rate_mean=float(np.mean(sku_rates)) if sku_rates else 0.0,
+            product_prior_adverse_rate_max=float(np.max(sku_rates)) if sku_rates else 0.0,
             product_prior_order_support_mean=float(np.mean(sku_support)) if sku_support else 0.0,
             product_prior_order_support_max=float(np.max(sku_support)) if sku_support else 0.0,
             country_prior_orders=country_support,
-            country_known_return_rate=float(country_known_rate),
+            country_prior_adverse_rate=float(country_known_rate),
             order_hour=int(ts.hour),
             order_day_of_week=int(ts.dayofweek),
             order_month=int(ts.month),
@@ -329,10 +329,10 @@ def build_feature_frames(train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFr
     numeric = [
         "total_gbp", "units", "line_count", "distinct_skus", "mean_unit_price", "max_unit_price",
         "avg_item_value", "basket_density", "max_price_share", "customer_prior_orders", "customer_prior_spend",
-        "customer_tenure_days", "days_since_last_order", "avg_prior_order_value", "customer_known_return_events",
-        "customer_known_return_rate", "customer_known_return_value", "customer_had_known_return",
-        "product_known_return_rate_mean", "product_known_return_rate_max", "product_prior_order_support_mean",
-        "product_prior_order_support_max", "country_prior_orders", "country_known_return_rate", "order_hour",
+        "customer_tenure_days", "days_since_last_order", "avg_prior_order_value", "customer_prior_adverse_events",
+        "customer_prior_adverse_rate", "customer_prior_adverse_value", "customer_had_prior_adverse_event",
+        "product_prior_adverse_rate_mean", "product_prior_adverse_rate_max", "product_prior_order_support_mean",
+        "product_prior_order_support_max", "country_prior_orders", "country_prior_adverse_rate", "order_hour",
         "order_day_of_week", "order_month", "is_weekend", "is_new_customer",
     ]
 
@@ -440,8 +440,8 @@ def holdout_export(test: pd.DataFrame, x_test: pd.DataFrame, p: np.ndarray, thre
     meta = test[[
         "InvoiceNo", "order_date", "country", "total_gbp", "units", "line_count", "distinct_skus",
         "customer_prior_orders", "customer_prior_spend", "customer_tenure_days", "days_since_last_order",
-        "customer_known_return_events", "customer_known_return_rate", "product_known_return_rate_mean",
-        "product_known_return_rate_max", "label_return", "returned_value_gbp",
+        "customer_prior_adverse_events", "customer_prior_adverse_rate", "product_prior_adverse_rate_mean",
+        "product_prior_adverse_rate_max", "label_return", "returned_value_gbp",
     ]].copy()
     meta["case_id"] = [hashlib.sha256(f"{inv}|{ts.isoformat()}".encode()).hexdigest()[:20] for inv, ts in zip(meta["InvoiceNo"], meta["order_date"])]
     meta = meta.drop(columns=["InvoiceNo"]).reset_index(drop=True)
@@ -491,7 +491,7 @@ def main():
             "C-prefixed invoice marker is outcome-only and never a feature.",
             "Negative quantity is outcome-only and never a feature.",
             "Current/future return labels and returned value are never model features.",
-            "Customer/product/country return-history features include only cancellation events observed before the current order timestamp.",
+            "Prior adverse-event features include only matched cancellation events observed before the current order timestamp.",
             "Purchase-history features are computed before the current order updates state.",
             "Train/validation/test are chronological; threshold and model family are chosen on validation only.",
             f"Final {RETURN_HORIZON_DAYS} days are censored to avoid incomplete return windows.",
