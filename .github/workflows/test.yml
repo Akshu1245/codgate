@@ -4,7 +4,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -19,35 +19,56 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements.txt
-      - run: pytest -q
-      - run: python -m app.score
-      - run: python -m app.preflight
-      - name: Assert regression-fixture metric block
+      - name: Run unit and integration tests
+        run: pytest -q
+      - name: Verify deterministic regression fixture
+        run: python -m app.score
+      - name: Run submission preflight
+        run: python -m app.preflight
+      - name: Verify frozen real detector runtime
         run: |
           python - <<'PY'
-          from app.score import evaluate, frozen_block
-          expected = """CodGate v1.0 · n=80 scored=80
-          Precision 74.2%
-          Recall    60.5%
-          false-block ₹1440 (₹180 × FP 8)
-          missed-RTO  ₹3750 (₹250 × FN 15)
-          TP 23 · FP 8 · FN 15 · TN 34
-          SHA-256 327f392da4049860f2eca1399b248f78e313a5e6b1694f6a5057d6573fb8e20a"""
-          actual = frozen_block(evaluate())
-          if actual != expected:
-              raise SystemExit(f"Regression fixture drifted:\n{actual}")
+          from app.return_risk_runtime import detector_status, score_return_risk
+
+          status = detector_status()
+          test = status["heldout_test"]
+          assert status["ready"] is True
+          assert status["model_version"] == "amazon-return-risk-v2"
+          assert status["runtime_model_sha256"] == "ced7e510515cc54ab874f598c4999c6c407d76fce36dccc007d114f128ccd754"
+          assert status["source_zip_sha256"] == "2d174af66d3390f6bdd157fec4e29e076e3454ed6935f124510ccc66f85c459a"
+          assert test["n"] == 5726 and test["positives"] == 362
+          assert (test["tp"], test["fp"], test["fn"], test["tn"]) == (84, 665, 278, 4699)
+
+          result = score_return_risk({
+              "order_date": "2022-06-10",
+              "fulfilment": "Merchant",
+              "sales_channel": "Amazon.in",
+              "service_level": "Standard",
+              "category": "kurta",
+              "size": "M",
+              "ship_city": "Bengaluru",
+              "ship_state": "Karnataka",
+              "postal_code": "560038",
+              "b2b": False,
+              "quantity": 1,
+              "amount": 899,
+              "item_rows": 1,
+          })
+          assert result["execution"] == "advisory_only"
+          assert result["score_is_calibrated_probability"] is False
+          assert "risk_probability" not in result
+          assert "payment_link" not in result
+          print("Frozen runtime model · SHA verified · scoring PASS")
           PY
-      - name: Assert Razorpay release gate scenarios
+      - name: Assert Razorpay release gate regression scenarios
         run: |
           python - <<'PY'
           from app.canary import demo_release
           expected = {"good": "SHIP", "wide": "SHADOW", "bad": "BLOCK_RELEASE"}
           for scenario, verdict in expected.items():
               result = demo_release(scenario)
-              if result["verdict"] != verdict:
-                  raise SystemExit(f"{scenario}: expected {verdict}, got {result['verdict']}")
-              if len(result["dataset_sha256"]) != 64:
-                  raise SystemExit(f"{scenario}: evidence SHA missing")
+              assert result["verdict"] == verdict, (scenario, result["verdict"])
+              assert len(result["dataset_sha256"]) == 64
           PY
       - name: Check UI JavaScript
         run: |
@@ -55,6 +76,7 @@ jobs:
           node --check static/repair.js
           node --check static/canary.js
           node --check static/real_evidence.js
+          node --check static/return_risk.js
           python - <<'PY'
           from pathlib import Path
           import re
@@ -76,43 +98,33 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-evidence.txt
       - run: pip install -r requirements-evidence.txt
-      - name: Rebuild Meesho exact-RTO external evidence
+      - name: Rebuild Meesho exact-RTO external validation
         run: python -m evidence.build_real_rto
-      - name: Validate reproduced Meesho evidence
+      - name: Validate reproduced Meesho evidence and fail-closed verdict
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
+          from app.evidence_gate import real_evidence_status
+
           generated = json.loads(Path("artifacts/real-rto-evidence/report.json").read_text())
           frozen = json.loads(Path("data/real_rto_evidence.json").read_text())
           source = generated["source"]
           test = generated["heldout_test"]
           split = generated["split"]
           dataset = generated["dataset"]
-          if source["dataset_slug"] != "sahilr05/meesho-orders" or len(source["zip_sha256"]) != 64:
-              raise SystemExit("Unexpected/missing Meesho provenance")
-          if dataset["terminal_orders"] < 100 or dataset["terminal_rto"] < 20 or dataset["terminal_delivered"] < 20:
-              raise SystemExit("Meesho terminal evidence unexpectedly shrank")
-          if test["n"] < 20 or test["positives"] < 1:
-              raise SystemExit("Meesho holdout is invalid")
-          if split["train"]["date_range"]["end"] > split["validation"]["date_range"]["start"]:
-              raise SystemExit("Meesho train/validation overlap")
-          if split["validation"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
-              raise SystemExit("Meesho validation/test overlap")
-          if frozen["source"]["zip_sha256"] != source["zip_sha256"] or frozen["dataset"] != dataset:
-              raise SystemExit("Frozen Meesho provenance/counts drifted")
-          if frozen["heldout_test"] != test or frozen["heldout_ci95_bootstrap"] != generated["heldout_ci95_bootstrap"]:
-              raise SystemExit("Frozen Meesho held-out evidence drifted")
-          PY
-      - name: Assert weak external candidate fails closed
-        run: |
-          python - <<'PY'
-          from app.evidence_gate import real_evidence_status
+
+          assert source["dataset_slug"] == "sahilr05/meesho-orders"
+          assert source["zip_sha256"] == "bd8dc168d218c403a7519f42364f307fbff26ad56adced18668e79cb9e171b6e"
+          assert dataset == frozen["dataset"]
+          assert test == frozen["heldout_test"]
+          assert generated["heldout_ci95_bootstrap"] == frozen["heldout_ci95_bootstrap"]
+          assert split["train"]["date_range"]["end"] <= split["validation"]["date_range"]["start"]
+          assert split["validation"]["date_range"]["end"] <= split["test"]["date_range"]["start"]
           result = real_evidence_status()
-          if result["verdict"] != "BLOCK_RELEASE":
-              raise SystemExit(f"Weak external candidate must be blocked, got {result['verdict']}")
-          if result["raw_rows_embedded"]:
-              raise SystemExit("Raw third-party rows must not be embedded")
+          assert result["verdict"] == "BLOCK_RELEASE"
+          assert result["raw_rows_embedded"] is False
+          print("Meesho exact-RTO external validation · reproduced · BLOCK_RELEASE")
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -131,9 +143,9 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-evidence.txt
       - run: pip install -r requirements-evidence.txt
-      - name: Audit real exact-COD seller slice
+      - name: Rebuild exact-COD seller audit
         run: python -m evidence.amazon_cod_audit
-      - name: Validate exact-COD audit is not promoted to final benchmark
+      - name: Enforce exact-COD audit scope
         run: |
           python - <<'PY'
           import json
@@ -141,17 +153,13 @@ jobs:
           report = json.loads(Path("artifacts/amazon-cod-audit/report.json").read_text())
           source = report["source"]
           exact = report["exact_cod_slice"]
-          if source["dataset_slug"] != "pranalibose/amazon-seller-order-status-prediction":
-              raise SystemExit("Unexpected exact-COD source")
-          if len(source["zip_sha256"]) != 64:
-              raise SystemExit("Exact-COD source SHA missing")
-          if exact["cod_terminal_rows"] < 40:
-              raise SystemExit("Exact-COD source unexpectedly shrank")
-          if exact["cod_returned_to_seller"] < 1 or exact["cod_delivered_to_buyer"] < 1:
-              raise SystemExit("Exact-COD audit lacks both terminal outcomes")
-          if report["final_benchmark_eligible"] is not False:
-              raise SystemExit("Small exact-COD audit must never be promoted to final benchmark")
-          print(json.dumps(report, indent=2, sort_keys=True))
+          assert source["dataset_slug"] == "pranalibose/amazon-seller-order-status-prediction"
+          assert len(source["zip_sha256"]) == 64
+          assert exact["cod_terminal_rows"] == 47
+          assert exact["cod_returned_to_seller"] == 5
+          assert exact["cod_delivered_to_buyer"] == 42
+          assert report["final_benchmark_eligible"] is False
+          print("Exact-COD audit · 47 terminal orders · domain check only")
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -170,37 +178,38 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-evidence.txt
       - run: pip install -r requirements-evidence.txt
-      - name: Build sealed-holdout real Amazon India return-risk detector v2
+      - name: Rebuild sealed-holdout Amazon India detector evidence
         run: python -m evidence.amazon_return_risk_v2
-      - name: Validate v2 held-out detector evidence
+      - name: Validate reproduced evidence against frozen accepted result
         run: |
           python - <<'PY'
-          import json
+          import json, math
           from pathlib import Path
+
           report = json.loads(Path("artifacts/amazon-return-risk-v2/report.json").read_text())
+          frozen = json.loads(Path("data/return_risk_evidence_v2.json").read_text())
           source = report["source"]
           dataset = report["dataset"]
           split = report["split"]
           test = report["heldout_test"]
+          accepted = frozen["heldout_test"]
           leakage = report["leakage_controls"]
           selected = report["selection"]["selected"]
-          if report["schema_version"] != 2:
-              raise SystemExit("Return-risk evidence must use sealed protocol v2")
-          if source["dataset_slug"] != "thedevastator/unlock-profits-with-e-commerce-sales-data":
-              raise SystemExit("Unexpected primary return-risk source")
-          if len(source["zip_sha256"]) != 64:
-              raise SystemExit("Primary source SHA missing")
-          if dataset["terminal_orders"] < 20000 or dataset["returned_to_seller"] < 500 or dataset["delivered_to_buyer"] < 15000:
-              raise SystemExit(f"Primary terminal population unexpectedly small: {dataset}")
-          if split["final_test"]["n"] < 4000 or split["final_test"]["returned_to_seller"] < 100:
-              raise SystemExit(f"Sealed final holdout too small: {split['final_test']}")
-          for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision", "roc_auc"):
-              value = test[metric]
-              if not 0.0 <= value <= 1.0:
-                  raise SystemExit(f"Invalid primary {metric}: {value}")
-          if selected["validation_f1"] <= 0 or selected["validation_precision"] <= 0 or selected["validation_recall"] <= 0:
-              raise SystemExit(f"A zero-usefulness validation model cannot be selected: {selected}")
-          expected_controls = {
+
+          assert report["schema_version"] == 2
+          assert source["dataset_slug"] == "thedevastator/unlock-profits-with-e-commerce-sales-data"
+          assert source["zip_sha256"] == frozen["source"]["zip_sha256"] == "2d174af66d3390f6bdd157fec4e29e076e3454ed6935f124510ccc66f85c459a"
+          assert dataset == frozen["dataset"]
+          assert split["final_test"]["n"] == 5726
+          assert split["final_test"]["returned_to_seller"] == 362
+          assert (test["tp"], test["fp"], test["fn"], test["tn"]) == (84, 665, 278, 4699)
+          for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision", "roc_auc", "prevalence", "precision_lift_vs_prevalence"):
+              assert math.isclose(test[metric], accepted[metric], rel_tol=0, abs_tol=1e-12), (metric, test[metric], accepted[metric])
+          assert math.isclose(test["threshold"], accepted["threshold"], rel_tol=0, abs_tol=1e-12)
+          assert test["false_positive_order_gmv_at_risk_inr"] == 443627.0
+          assert test["missed_return_order_gmv_inr"] == 187138.0
+          assert selected["validation_f1"] > 0 and selected["validation_precision"] > 0 and selected["validation_recall"] > 0
+          assert leakage == {
               "order_id_feature": False,
               "status_feature": False,
               "courier_status_feature": False,
@@ -210,70 +219,11 @@ jobs:
               "final_test_used_for_model_selection": False,
               "synthetic_rows_or_smote": False,
           }
-          if leakage != expected_controls:
-              raise SystemExit(f"Leakage contract drifted: {leakage}")
-          if test["false_positive_order_gmv_at_risk_inr"] < 0 or test["missed_return_order_gmv_inr"] < 0:
-              raise SystemExit("Primary monetary exposure is invalid")
-          if report["false_positive_cost_disclosure"]["realized_profit_loss_identifiable_from_source"] is not False:
-              raise SystemExit("Do not invent realized false-positive merchant profit cost")
-          if test["precision"] <= test["prevalence"]:
-              raise SystemExit(f"Detector has no precision lift over base return rate: {test}")
-          if test["recall"] <= 0:
-              raise SystemExit("Detector must identify at least some held-out returns")
-          print(json.dumps({"dataset": dataset, "split": split, "selection": selected, "heldout_test": test, "ranking": report["ranking_checks"], "ci95": report["heldout_ci95_bootstrap"]}, indent=2, sort_keys=True))
+          assert report["false_positive_cost_disclosure"]["realized_profit_loss_identifiable_from_source"] is False
+          assert test["precision"] > test["prevalence"]
+          assert test["recall"] > 0
+          print("Primary real detector · 5,726 sealed holdout · evidence reproduced")
           PY
-      - name: Freeze compact runtime model on source branch
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/real-rto-evidence'
-        run: |
-          python - <<'PY'
-          import base64, hashlib, json, lzma
-          from pathlib import Path
-
-          model = json.loads(Path('artifacts/amazon-return-risk-v2/model.json').read_text())
-          evidence = json.loads(Path('data/return_risk_evidence_v2.json').read_text())
-          maps = {
-              column: {
-                  key: [int(value['count']), float(value['rate'])]
-                  for key, value in values.items()
-              }
-              for column, values in model['encoding']['maps'].items()
-          }
-          first_map = next(iter(maps.values()))
-          compact = {
-              'v': 2,
-              'f': 'logistic',
-              'l': 'RETURN_TO_SELLER',
-              't': model['threshold'],
-              's': model['source_zip_sha256'],
-              'c': model['categorical_columns'],
-              'g': model['encoding']['global_return_rate'],
-              'a': model['encoding']['alpha'],
-              'n': sum(item[0] for item in first_map.values()),
-              'm': maps,
-              'u': model['scaler_mean'],
-              'q': model['scaler_scale'],
-              'i': model['intercept'],
-              'w': model['coefficients'],
-          }
-          raw = json.dumps(compact, separators=(',', ':'), sort_keys=True).encode()
-          compressed = lzma.compress(raw, preset=9 | lzma.PRESET_EXTREME)
-          raw_sha = hashlib.sha256(raw).hexdigest()
-          compressed_sha = hashlib.sha256(compressed).hexdigest()
-          if raw_sha != evidence['runtime_model_sha256']:
-              raise SystemExit(f"runtime raw SHA mismatch: {raw_sha} != {evidence['runtime_model_sha256']}")
-          if compressed_sha != evidence['runtime_model_compressed_sha256']:
-              raise SystemExit(f"runtime compressed SHA mismatch: {compressed_sha} != {evidence['runtime_model_compressed_sha256']}")
-          Path('data/return_risk_model_v2.xz.b64').write_text(base64.b64encode(compressed).decode() + '\n')
-          PY
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/return_risk_model_v2.xz.b64
-          if git diff --cached --quiet; then
-            echo "Frozen runtime model already matches."
-          else
-            git commit -m "Freeze trained return-risk runtime model"
-            git push origin HEAD:feat/real-rto-evidence
-          fi
       - uses: actions/upload-artifact@v4
         with:
           name: codgate-primary-return-risk-evidence-v2
