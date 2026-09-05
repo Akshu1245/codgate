@@ -2,69 +2,66 @@
 
 CodGate submits one loss class only: **COD Return-to-Origin (RTO)**.
 
-This document maps the public prototype to the Track 02 bar without treating extra engineering as extra problem statements.
+The primary product claim is a **working RTO verifier/control layer**, not that a small public classifier should replace Razorpay's private risk intelligence.
 
 | Track 02 requirement | CodGate evidence |
 |---|---|
 | One class of merchant loss | COD RTO only |
-| Working detector / verifier / auto-responder | RTO decision verifier + bounded policy executor |
-| Held-out test set | `data/heldout.csv`, frozen n=80 |
-| Precision | 74.2% on frozen v1.0 benchmark |
-| Recall | 60.5% on frozen v1.0 benchmark |
-| Honest false-positive cost | FP 8 × ₹180 = ₹1,440 |
-| Honest false-negative cost | FN 15 × ₹250 = ₹3,750 |
-| Reproducible evidence | exact CSV SHA-256; `python -m app.score` |
-| Defense-only | no offensive tooling; decisions only restrict/verify COD risk |
-| Working intervention | `FORCE_PREPAID` attaches Razorpay test Payment Link at HTTP layer; pure `decide()` has no side effect |
-| Failure disclosure | exact false-positive/false-negative row groups in README / Metrics |
-| Auditability | deterministic decision/repair/release receipts + chained audit/outcome ledgers |
-| Bounded uncertainty | shadow mode; Risk Canary sample-size, CI, slice and blast-radius gates |
-| Real-world learning loop | observed `DELIVERED / RTO` endpoint and separate live economics |
+| Working detector / verifier / auto-responder | Working RTO evidence gate + paired Risk Canary + bounded checkout executor |
+| Held-out test set | Public Meesho supplier-order dataset described by its Kaggle page as real; chronological final holdout n=28 |
+| Measured precision | **23.08%** on untouched real-data holdout (TP 3, FP 10) |
+| Measured recall | **37.50%** on untouched real-data holdout (TP 3, FN 5) |
+| Additional held-out quality | ROC-AUC **0.4313**, PR-AUC **0.3656**, balanced accuracy **0.4375** |
+| Reproducible provenance | Kaggle slug `sahilr05/meesho-orders`; source ZIP SHA `bd8dc168d218c403a7519f42364f307fbff26ad56adced18668e79cb9e171b6e` |
+| Leakage control | Terminal `RTO_COMPLETE` vs `DELIVERED` only; post-outcome fields forbidden; chronological 60/20/20; threshold chosen on validation only |
+| Correct response to weak model | Evidence gate returns **`BLOCK_RELEASE`** because ROC-AUC <0.5 and precision < holdout prevalence |
+| Working intervention | Shadow mode never creates a Payment Link; enforce mode can use Razorpay test Payment Links only after a policy decision |
+| Defense-only | No offensive tooling; controls only restrict/verify COD risk |
+| Auditability | Deterministic decision/repair/evidence/release receipts + chained decision/outcome ledgers |
+| Bounded uncertainty | Bootstrap CI, sample-size gate, paired CI, slice and blast-radius gates |
+| Real-world learning loop | Observed `DELIVERED / RTO` endpoint and `/metrics/live` |
 
-## Why the verifier is the primary product claim
+## Evidence classes are explicit
 
-A public team cannot credibly claim that an 80-row deterministic rule policy outperforms Razorpay's private RTO intelligence or every public RTO model trained on larger synthetic/Kaggle-derived data.
+**Primary public evidence**
+- 138 terminal real-data outcomes after filtering/deduplication,
+- 28 RTO / 110 delivered,
+- chronological train/validation/test = 82 / 28 / 28,
+- final holdout = 28 rows / 8 RTO,
+- precision 23.08%, recall 37.50%, ROC-AUC 0.4313,
+- verdict `BLOCK_RELEASE`.
 
-CodGate therefore makes the narrower claim that is actually implemented and testable:
+**Regression fixtures only**
+- `data/heldout.csv` n=80 handcrafted synthetic policy fixture,
+- canonical ALLOW/FORCE/STOP orders,
+- `/release/demo/good|wide|bad` synthetic paired-canary fixtures,
+- pincode severity bands,
+- ₹180/₹250 scenario error-cost constants.
 
-> **An RTO decision should not change money-moving checkout behaviour until its error cost, merchant-slice impact, evidence quality and rollout blast radius are verified and recorded.**
+The n=80 fixture's 74.2% / 60.5% values are retained only to detect software/policy drift and are **not** submitted as real-world accuracy.
 
-That is why Risk Canary consumes precomputed current/candidate decisions rather than embedding another classifier.
+## Why the verifier is the strongest claim
 
-## What is prototype evidence vs production evidence
+The public real-data candidate performs poorly. CodGate does not tune against the observed final test until the number looks good. Instead it demonstrates the control that matters: a weak candidate is measured, its failure is visible, and it is prevented from reaching checkout enforcement.
 
-**Prototype evidence**
-- frozen n=80 transaction benchmark,
-- deterministic policy v1.0,
-- three canonical order cases,
-- deterministic 200-row Canary behavior fixtures,
-- local/simulated Payment Link fallback when Razorpay test credentials are absent.
+Standalone held-out evidence can never produce `SHIP`; even a strong standalone result is capped at `SHADOW` until a paired CURRENT-vs-CANDIDATE replay with observed outcomes also clears Risk Canary.
 
-**Production evidence required inside Razorpay**
-- large paired replay/shadow window from Razorpay-owned traffic,
-- trusted fulfilment outcomes,
-- approved merchant cohort definitions,
-- internal cost model,
-- service authentication and durable audit storage,
-- internal model/policy registry and rollout approvals.
-
-The repo deliberately keeps those categories separate. Synthetic fixtures are never presented as Razorpay production accuracy.
-
-## One-command reviewer path
+## Reviewer path
 
 ```bash
 pytest -q
-python -m app.score
 python -m app.preflight
+pip install -r requirements-evidence.txt
+python -m evidence.build_real_rto
 ```
 
-Then use the desk:
+Then open the six-surface console:
 
-1. ALLOW canonical order.
-2. FORCE canonical order and inspect the Payment Link.
-3. STOP bad pincode.
-4. Inspect Counterfactual Risk Repair: canonical Siwan remains `STRUCTURAL_RISK`, 145 → 97.
-5. In Policy, run Risk Canary: safe candidate → `SHIP`; wide candidate → `SHADOW`; bad candidate → `BLOCK_RELEASE`.
-6. Read the frozen Metrics and Audit evidence.
+1. **Control Room** — operational health and evidence status.
+2. **Decision Desk** — deterministic checkout/action wiring; use shadow mode for no side effects.
+3. **Customer Correctability** — verify legitimate correction vs structural risk.
+4. **Risk Canary** — inspect the real public-data `BLOCK_RELEASE` card first; demo buttons are labeled regression fixtures.
+5. **Audit Terminal** — verify hash chains.
+6. **Integration Simulator** — verify the end-to-end shadow flow and that no Payment Link is created.
 
-The reviewer should be able to verify the core claims in five minutes without trusting a marketing statement.
+The important proof is not a flattering score. It is that the system reproduces the real result and **fails closed when the result is not good enough**.
