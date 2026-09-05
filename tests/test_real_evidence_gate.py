@@ -5,13 +5,16 @@ from fastapi.testclient import TestClient
 
 from app.evidence_gate import evaluate_evidence_report, load_real_evidence, real_evidence_status
 from app.repair_app import app
+from app.return_risk_runtime import detector_status, score_return_risk
 
 
 client = TestClient(app)
-SOURCE_SHA = "bd8dc168d218c403a7519f42364f307fbff26ad56adced18668e79cb9e171b6e"
+MEESHO_SOURCE_SHA = "bd8dc168d218c403a7519f42364f307fbff26ad56adced18668e79cb9e171b6e"
+AMAZON_SOURCE_SHA = "2d174af66d3390f6bdd157fec4e29e076e3454ed6935f124510ccc66f85c459a"
+RUNTIME_MODEL_SHA = "ced7e510515cc54ab874f598c4999c6c407d76fce36dccc007d114f128ccd754"
 
 
-def test_frozen_real_evidence_is_exact_and_blocks_release():
+def test_frozen_meesho_external_evidence_is_exact_and_blocks_release():
     result = real_evidence_status()
     test = result["heldout_test"]
     dataset = result["dataset"]
@@ -19,7 +22,7 @@ def test_frozen_real_evidence_is_exact_and_blocks_release():
     assert result["verdict"] == "BLOCK_RELEASE"
     assert result["raw_rows_embedded"] is False
     assert result["provenance"]["dataset_slug"] == "sahilr05/meesho-orders"
-    assert result["provenance"]["zip_sha256"] == SOURCE_SHA
+    assert result["provenance"]["zip_sha256"] == MEESHO_SOURCE_SHA
 
     assert dataset["terminal_orders"] == 138
     assert dataset["terminal_rto"] == 28
@@ -37,25 +40,94 @@ def test_frozen_real_evidence_is_exact_and_blocks_release():
     assert result["release_receipt"].startswith("cgre_")
 
 
-def test_evidence_api_returns_same_fail_closed_verdict():
+def test_external_rto_api_returns_same_fail_closed_verdict():
     response = client.get("/evidence/real-rto")
     assert response.status_code == 200
     body = response.json()
     assert body["verdict"] == "BLOCK_RELEASE"
     assert body["heldout_test"]["precision"] == pytest.approx(3 / 13)
     assert body["heldout_test"]["recall"] == pytest.approx(3 / 8)
-    assert body["provenance"]["zip_sha256"] == SOURCE_SHA
+    assert body["provenance"]["zip_sha256"] == MEESHO_SOURCE_SHA
 
 
-def test_deployed_metrics_are_real_evidence_first():
+def test_frozen_primary_detector_integrity_and_real_heldout_metrics():
+    status = detector_status()
+    test = status["heldout_test"]
+    dataset = status["dataset"]
+
+    assert status["ready"] is True
+    assert status["loss_class"] == "RETURN_TO_SELLER"
+    assert status["model_version"] == "amazon-return-risk-v2"
+    assert status["score_is_calibrated_probability"] is False
+    assert status["source_zip_sha256"] == AMAZON_SOURCE_SHA
+    assert status["runtime_model_sha256"] == RUNTIME_MODEL_SHA
+    assert dataset["terminal_orders"] == 28417
+    assert dataset["returned_to_seller"] == 1851
+    assert dataset["delivered_to_buyer"] == 26566
+    assert test["n"] == 5726
+    assert test["positives"] == 362
+    assert (test["tp"], test["fp"], test["fn"], test["tn"]) == (84, 665, 278, 4699)
+    assert test["precision"] == pytest.approx(0.11214953271028037)
+    assert test["recall"] == pytest.approx(0.23204419889502761)
+    assert test["prevalence"] == pytest.approx(0.06322039818372337)
+    assert test["precision_lift_vs_prevalence"] == pytest.approx(1.7739453709918933)
+    assert test["false_positive_order_gmv_at_risk_inr"] == pytest.approx(443627.0)
+    assert test["missed_return_order_gmv_inr"] == pytest.approx(187138.0)
+
+
+def test_return_risk_api_scores_with_frozen_model_and_never_moves_money():
+    payload = {
+        "order_date": "2022-06-10",
+        "fulfilment": "Merchant",
+        "sales_channel": "Amazon.in",
+        "service_level": "Standard",
+        "style": "",
+        "sku": "",
+        "category": "kurta",
+        "size": "M",
+        "ship_city": "Bengaluru",
+        "ship_state": "Karnataka",
+        "postal_code": "560038",
+        "b2b": False,
+        "quantity": 1,
+        "amount": 899,
+        "item_rows": 1,
+        "false_positive_cost_per_order_inr": 250,
+    }
+    response = client.post("/return-risk/score", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model_version"] == "amazon-return-risk-v2"
+    assert body["decision"] in {"FLAG_RETURN_RISK", "STANDARD_FLOW"}
+    assert body["action"] in {"RISK_REVIEW", "NO_RISK_INTERVENTION"}
+    assert body["execution"] == "advisory_only"
+    assert body["score_is_calibrated_probability"] is False
+    assert "risk_probability" not in body
+    assert 0 <= body["risk_score"] <= 1
+    assert body["runtime_model_sha256"] == RUNTIME_MODEL_SHA
+    assert body["source_zip_sha256"] == AMAZON_SOURCE_SHA
+    assert body["heldout_modeled_false_positive_cost_inr"] == pytest.approx(665 * 250)
+    assert "payment_link" not in body
+
+
+def test_deployed_metrics_are_large_real_detector_first():
     response = client.get("/metrics")
     assert response.status_code == 200
     body = response.json()
 
     assert "precision" not in body
-    assert body["primary_evidence"]["verdict"] == "BLOCK_RELEASE"
-    assert body["primary_evidence"]["heldout_test"]["precision"] == pytest.approx(3 / 13)
-    assert body["primary_evidence"]["provenance"]["zip_sha256"] == SOURCE_SHA
+    primary = body["primary_evidence"]
+    assert primary["ready"] is True
+    assert primary["model_version"] == "amazon-return-risk-v2"
+    assert primary["heldout_test"]["n"] == 5726
+    assert primary["heldout_test"]["precision"] == pytest.approx(0.11214953271028037)
+    assert primary["heldout_test"]["recall"] == pytest.approx(0.23204419889502761)
+    assert primary["source_zip_sha256"] == AMAZON_SOURCE_SHA
+
+    external = body["external_rto_validation"]
+    assert external["verdict"] == "BLOCK_RELEASE"
+    assert external["heldout_test"]["precision"] == pytest.approx(3 / 13)
+    assert external["provenance"]["zip_sha256"] == MEESHO_SOURCE_SHA
 
     fixture = body["regression_fixture"]
     assert fixture["classification"] == "handcrafted_synthetic_regression_fixture"
@@ -72,26 +144,36 @@ def test_synthetic_csv_endpoint_is_explicitly_classified():
     assert response.headers["X-CodGate-Claim-Scope"] == "software-regression-only"
 
 
-def test_live_rupee_cost_is_labeled_assumption():
+def test_live_cost_fields_separate_regression_assumptions_from_real_exposure():
     response = client.get("/metrics/live")
     assert response.status_code == 200
     body = response.json()
-    assert body["cost_model"]["classification"] == "assumption"
-    assert body["cost_model"]["measured_merchant_economics"] is False
-    assert body["cost_model"]["false_block_inr_per_case"] == 180
-    assert body["cost_model"]["missed_rto_inr_per_case"] == 250
+
+    legacy = body["legacy_cost_model"]
+    assert legacy["classification"] == "regression-assumption-only"
+    assert legacy["measured_merchant_economics"] is False
+    assert legacy["false_block_inr_per_case"] == 180
+    assert legacy["missed_rto_inr_per_case"] == 250
+
+    real = body["real_detector_cost_model"]
+    assert real["default_false_positive_cost_inr"] is None
+    assert real["merchant_supplied_required"] is True
+    assert real["source_derived_heldout_false_positive_gmv_inr"] == pytest.approx(443627.0)
 
 
-def test_ops_status_exposes_release_block_separately_from_service_health():
+def test_ops_status_exposes_real_detector_and_external_gate_separately():
     response = client.get("/ops/status")
     assert response.status_code == 200
     body = response.json()
-    assert body["release_authorized"] is False
-    assert body["primary_evidence"]["verdict"] == "BLOCK_RELEASE"
+    assert body["return_risk_detector"]["ready"] is True
+    assert body["return_risk_detector"]["model_version"] == "amazon-return-risk-v2"
+    assert body["return_risk_detector"]["heldout_precision"] == pytest.approx(0.11214953271028037)
+    assert body["return_risk_detector"]["heldout_recall"] == pytest.approx(0.23204419889502761)
+    assert body["external_rto_validation"]["verdict"] == "BLOCK_RELEASE"
     assert body["regression_fixture"]["integrity_only"] is True
 
 
-def test_standalone_evidence_can_never_ship_even_if_metrics_are_good():
+def test_standalone_external_evidence_can_never_ship_even_if_metrics_are_good():
     report = copy.deepcopy(load_real_evidence())
     report["dataset"]["terminal_orders"] = 1000
     report["dataset"]["terminal_rto"] = 200
