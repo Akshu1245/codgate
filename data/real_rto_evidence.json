@@ -52,14 +52,14 @@
   },
   "model": {
     "family": "hashed logistic regression",
-    "selected_threshold": 0.35,
+    "selected_threshold": 0.3499999999999999,
     "threshold_selection": "maximize F1 on validation split only"
   },
   "heldout_test": {
     "n": 28,
     "positives": 8,
     "prevalence": 0.2857142857142857,
-    "threshold": 0.35,
+    "threshold": 0.3499999999999999,
     "precision": 0.23076923076923078,
     "recall": 0.375,
     "f1": 0.2857142857142857,
@@ -76,7 +76,7 @@
     "recall": [0.0, 0.7506944444444438]
   },
   "limitations": [
-    "The exact-RTO public source has only 138 terminal outcomes after deduplication and filtering.",
+    "The source contains 139 terminal rows before deduplication and 138 unique terminal orders after deduplication/filtering.",
     "The held-out test has 28 rows and 8 RTO positives, so uncertainty is wide.",
     "This supplier-specific public dataset cannot establish Razorpay-wide production accuracy.",
     "No synthetic rows, SMOTE, duplicate expansion or post-outcome features are used.",
