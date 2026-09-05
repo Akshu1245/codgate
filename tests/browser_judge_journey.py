@@ -1,8 +1,8 @@
 """Real-browser smoke test for the complete judge-facing Track 02 journey.
 
 Run against a local CodGate server. This intentionally checks the rendered UI,
-actual button wiring, API round-trips and shadow-mode safety rather than only
-HTML strings or backend unit tests.
+actual button wiring, API round-trips, real-data evidence and shadow-mode safety
+rather than only HTML strings or backend unit tests.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def main() -> None:
         expect(page.locator("#cr-ready")).to_have_text("READY", timeout=10_000)
         expect(page.locator("#ready-label")).to_have_text("ready")
 
-        # 1. Decision Desk — canonical high-risk order in SHADOW mode.
+        # 1. Decision Desk — canonical policy regression case in SHADOW mode.
         page.locator('button[data-tab="decision-desk"]').click()
         expect(page.locator("#decision-desk")).to_be_visible()
         page.locator('button[data-case="force"]').click()
@@ -49,7 +49,7 @@ def main() -> None:
         expect(page.locator("#decision-result")).to_contain_text("DECISION RECEIPT")
         expect(page.locator("#decision-result")).to_contain_text("AUDIT HASH")
 
-        # 2. Customer Correctability — structural risk cannot be edited away.
+        # 2. Customer Correctability — structural policy risk cannot be edited away.
         page.locator('button[data-tab="correctability"]').click()
         page.locator("#load-structural").click()
         page.locator("#run-repair").click()
@@ -57,8 +57,24 @@ def main() -> None:
         expect(page.locator("#repair-result")).to_contain_text("145 → 97 pts")
         expect(page.locator("#repair-result")).to_contain_text("REPAIR RECEIPT")
 
-        # 3. Risk Canary — all three deterministic governance verdicts.
+        # 3. Risk Canary — real public-data evidence is primary and fails closed.
         page.locator('button[data-tab="risk-canary"]').click()
+        real = page.locator("#real-evidence-card")
+        expect(real).to_be_visible()
+        expect(real.locator(".re-verdict")).to_have_text("BLOCK RELEASE", timeout=10_000)
+        expect(real).to_contain_text("Terminal outcomes")
+        expect(real).to_contain_text("138")
+        expect(real).to_contain_text("28")
+        expect(real).to_contain_text("23.1%")
+        expect(real).to_contain_text("37.5%")
+        expect(real).to_contain_text("0.431")
+        expect(real).to_contain_text("TP 3 · FP 10 · FN 5 · TN 10")
+        expect(real).to_contain_text("sahilr05/meesho-orders")
+        expect(real).to_contain_text("bd8dc168d218c403")
+        expect(page.locator(".fixture-note")).to_contain_text("Regression fixtures only")
+
+        # Deterministic governance fixtures still prove the three paired-canary paths,
+        # but are explicitly not presented as accuracy evidence.
         page.locator('button[data-canary="good"]').click()
         expect(page.locator("#canary-output .headline")).to_have_text("SHIP")
         page.locator('button[data-canary="wide"]').click()
@@ -84,12 +100,16 @@ def main() -> None:
 
         page.screenshot(path=ARTIFACT_DIR / "desktop-judge-journey.png", full_page=True)
 
-        # 6. Responsive smoke check — mobile layout remains usable.
+        # 6. Responsive smoke check — mobile layout and evidence remain usable.
         page.set_viewport_size({"width": 390, "height": 844})
+        page.locator('button[data-tab="risk-canary"]').click()
+        expect(page.locator("#real-evidence-card")).to_be_visible()
+        expect(page.locator("#real-evidence-card .re-verdict")).to_have_text("BLOCK RELEASE")
+        page.screenshot(path=ARTIFACT_DIR / "mobile-real-evidence.png", full_page=True)
+
         page.locator('button[data-tab="control-room"]').click()
         expect(page.locator("#control-room")).to_be_visible()
         expect(page.locator('button[data-tab="decision-desk"]')).to_be_visible()
-        page.screenshot(path=ARTIFACT_DIR / "mobile-control-room.png", full_page=True)
 
         browser.close()
 
@@ -98,6 +118,7 @@ def main() -> None:
 
     print("CodGate browser judge journey · PASS")
     print("desktop + mobile smoke verified")
+    print("real public-data candidate is visible and BLOCK_RELEASE")
     print("SHADOW integration flow issued no Payment Link")
 
 
