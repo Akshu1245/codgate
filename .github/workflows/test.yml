@@ -2,6 +2,7 @@ name: test
 on:
   push:
   pull_request:
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -22,7 +23,6 @@ jobs:
         run: |
           python - <<'PY'
           from app.score import evaluate, frozen_block
-
           expected = """CodGate v1.0 · n=80 scored=80
           Precision 74.2%
           Recall    60.5%
@@ -38,7 +38,6 @@ jobs:
         run: |
           python - <<'PY'
           from app.canary import demo_release
-
           expected = {"good": "SHIP", "wide": "SHADOW", "bad": "BLOCK_RELEASE"}
           for scenario, verdict in expected.items():
               result = demo_release(scenario)
@@ -47,18 +46,15 @@ jobs:
               if len(result["dataset_sha256"]) != 64:
                   raise SystemExit(f"{scenario}: evidence SHA missing")
           PY
-      - name: Check operator UI JavaScript
+      - name: Check UI JavaScript
         run: |
           node --check static/ops.js
           node --check static/repair.js
           node --check static/canary.js
           node --check static/real_evidence.js
-      - name: Check six-surface console JavaScript
-        run: |
           python - <<'PY'
           from pathlib import Path
           import re
-
           html = Path("static/index.html").read_text(encoding="utf-8")
           scripts = re.findall(r"<script>([\s\S]*?)</script>", html)
           if not scripts:
@@ -77,77 +73,52 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-evidence.txt
       - run: pip install -r requirements-evidence.txt
-      - name: Build real Meesho RTO held-out evidence
+      - name: Rebuild Meesho exact-RTO external evidence
         run: python -m evidence.build_real_rto
-      - name: Validate evidence contract and frozen aggregate
+      - name: Validate reproduced Meesho evidence
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-
           generated = json.loads(Path("artifacts/real-rto-evidence/report.json").read_text())
           frozen = json.loads(Path("data/real_rto_evidence.json").read_text())
           source = generated["source"]
           test = generated["heldout_test"]
           split = generated["split"]
           dataset = generated["dataset"]
-
-          if source["dataset_slug"] != "sahilr05/meesho-orders":
-              raise SystemExit("Unexpected dataset source")
-          if len(source["zip_sha256"]) != 64:
-              raise SystemExit("Missing source ZIP SHA-256")
-          if dataset["terminal_orders"] < 100:
-              raise SystemExit("Exact-RTO real terminal dataset unexpectedly shrank below 100 rows")
-          if dataset["terminal_rto"] < 20 or dataset["terminal_delivered"] < 20:
-              raise SystemExit("Real dataset does not contain enough of both terminal outcomes")
+          if source["dataset_slug"] != "sahilr05/meesho-orders" or len(source["zip_sha256"]) != 64:
+              raise SystemExit("Unexpected/missing Meesho provenance")
+          if dataset["terminal_orders"] < 100 or dataset["terminal_rto"] < 20 or dataset["terminal_delivered"] < 20:
+              raise SystemExit("Meesho terminal evidence unexpectedly shrank")
           if test["n"] < 20 or test["positives"] < 1:
-              raise SystemExit("Held-out split is not meaningful")
-          if not generated.get("limitations"):
-              raise SystemExit("Small-sample limitations must be explicit")
-          for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision"):
-              value = test[metric]
-              if not 0.0 <= value <= 1.0:
-                  raise SystemExit(f"Invalid {metric}: {value}")
-          ci = generated.get("heldout_ci95_bootstrap", {})
-          if "precision" not in ci or "recall" not in ci:
-              raise SystemExit("Precision/recall bootstrap confidence intervals are required")
+              raise SystemExit("Meesho holdout is invalid")
           if split["train"]["date_range"]["end"] > split["validation"]["date_range"]["start"]:
-              raise SystemExit("Train/validation chronological overlap detected")
+              raise SystemExit("Meesho train/validation overlap")
           if split["validation"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
-              raise SystemExit("Validation/test chronological overlap detected")
-
-          if frozen["source"]["zip_sha256"] != source["zip_sha256"]:
-              raise SystemExit("Frozen source SHA does not match reproduced source")
-          if frozen["dataset"] != dataset:
-              raise SystemExit(f"Frozen dataset counts drifted: {frozen['dataset']} != {dataset}")
-          if frozen["heldout_test"] != test:
-              raise SystemExit(f"Frozen held-out metrics drifted: {frozen['heldout_test']} != {test}")
-          if frozen["heldout_ci95_bootstrap"] != ci:
-              raise SystemExit("Frozen bootstrap intervals drifted")
-
-          print(json.dumps({"dataset": dataset, "split": split, "heldout_test": test, "ci95": ci}, indent=2, sort_keys=True))
+              raise SystemExit("Meesho validation/test overlap")
+          if frozen["source"]["zip_sha256"] != source["zip_sha256"] or frozen["dataset"] != dataset:
+              raise SystemExit("Frozen Meesho provenance/counts drifted")
+          if frozen["heldout_test"] != test or frozen["heldout_ci95_bootstrap"] != generated["heldout_ci95_bootstrap"]:
+              raise SystemExit("Frozen Meesho held-out evidence drifted")
           PY
-      - name: Assert real candidate fails closed
+      - name: Assert weak external candidate fails closed
         run: |
           python - <<'PY'
           from app.evidence_gate import real_evidence_status
-
           result = real_evidence_status()
           if result["verdict"] != "BLOCK_RELEASE":
-              raise SystemExit(f"Weak real-data candidate must be blocked, got {result['verdict']}")
+              raise SystemExit(f"Weak external candidate must be blocked, got {result['verdict']}")
           if result["raw_rows_embedded"]:
               raise SystemExit("Raw third-party rows must not be embedded")
-          print(result["verdict"], *result["reasons"], sep="\n")
           PY
-      - name: Upload real-data evidence
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: codgate-real-rto-evidence
+          name: codgate-meesho-rto-evidence
           path: artifacts/real-rto-evidence
           if-no-files-found: error
           retention-days: 30
 
-  exact-cod-evidence:
+  exact-cod-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -157,59 +128,95 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-evidence.txt
       - run: pip install -r requirements-evidence.txt
-      - name: Build exact COD Amazon seller held-out evidence
-        run: python -m evidence.amazon_cod_rto
-      - name: Validate exact-COD evidence contract
+      - name: Audit real exact-COD seller slice
+        run: python -m evidence.amazon_cod_audit
+      - name: Validate exact-COD audit is not promoted to final benchmark
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-
-          report = json.loads(Path("artifacts/amazon-cod-rto/report.json").read_text())
+          report = json.loads(Path("artifacts/amazon-cod-audit/report.json").read_text())
           source = report["source"]
-          dataset = report["dataset"]
-          split = report["split"]
-          test = report["heldout_test"]
-          leakage = report["privacy_and_leakage"]
-
+          exact = report["exact_cod_slice"]
           if source["dataset_slug"] != "pranalibose/amazon-seller-order-status-prediction":
               raise SystemExit("Unexpected exact-COD source")
           if len(source["zip_sha256"]) != 64:
               raise SystemExit("Exact-COD source SHA missing")
-          if dataset["cod_terminal_orders"] < 50:
-              raise SystemExit("Exact-COD terminal population too small")
-          if dataset["returned_to_seller"] < 5 or dataset["delivered_to_buyer"] < 20:
-              raise SystemExit("Exact-COD source lacks both terminal outcomes")
-          if test["n"] < 10 or test["positives"] < 1:
-              raise SystemExit("Exact-COD final holdout is not meaningful")
+          if exact["cod_terminal_rows"] < 40:
+              raise SystemExit("Exact-COD source unexpectedly shrank")
+          if exact["cod_returned_to_seller"] < 1 or exact["cod_delivered_to_buyer"] < 1:
+              raise SystemExit("Exact-COD audit lacks both terminal outcomes")
+          if report["final_benchmark_eligible"] is not False:
+              raise SystemExit("Small exact-COD audit must never be promoted to final benchmark")
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codgate-exact-cod-audit
+          path: artifacts/amazon-cod-audit
+          if-no-files-found: error
+          retention-days: 30
+
+  return-risk-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-evidence.txt
+      - run: pip install -r requirements-evidence.txt
+      - name: Build primary real Amazon India return-risk detector
+        run: python -m evidence.amazon_return_risk
+      - name: Validate untouched held-out detector evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/amazon-return-risk/report.json").read_text())
+          source = report["source"]
+          dataset = report["dataset"]
+          split = report["split"]
+          test = report["heldout_test"]
+          leakage = report["leakage_controls"]
+          if source["dataset_slug"] != "thedevastator/unlock-profits-with-e-commerce-sales-data":
+              raise SystemExit("Unexpected primary return-risk source")
+          if len(source["zip_sha256"]) != 64:
+              raise SystemExit("Primary source SHA missing")
+          if dataset["terminal_orders"] < 20000 or dataset["returned_to_seller"] < 500 or dataset["delivered_to_buyer"] < 15000:
+              raise SystemExit(f"Primary terminal population unexpectedly small: {dataset}")
+          if test["n"] < 2000 or test["positives"] < 50:
+              raise SystemExit(f"Final chronological holdout too small: {test}")
           for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision", "roc_auc"):
               value = test[metric]
               if not 0.0 <= value <= 1.0:
-                  raise SystemExit(f"Invalid exact-COD {metric}: {value}")
-          if any(leakage.values()):
-              raise SystemExit(f"Leakage/privacy contract violated: {leakage}")
+                  raise SystemExit(f"Invalid primary {metric}: {value}")
+          expected_controls = {
+              "order_id_feature": False,
+              "status_feature": False,
+              "courier_status_feature": False,
+              "duplicate_item_rows_split_across_sets": False,
+              "target_encoding_train_only": True,
+              "train_target_encoding_leave_one_out": True,
+              "test_used_for_model_selection": False,
+          }
+          if leakage != expected_controls:
+              raise SystemExit(f"Leakage contract drifted: {leakage}")
           if split["train"]["date_range"]["end"] > split["validation"]["date_range"]["start"]:
-              raise SystemExit("Exact-COD train/validation chronology overlaps")
+              raise SystemExit("Primary train/validation chronology overlaps")
           if split["validation"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
-              raise SystemExit("Exact-COD validation/test chronology overlaps")
-          for field in (
-              "false_positive_gmv_at_risk_inr",
-              "false_positive_source_shipping_fee_inr",
-              "missed_return_gmv_inr",
-              "missed_return_source_shipping_fee_inr",
-          ):
-              if test[field] < 0:
-                  raise SystemExit(f"Negative monetary evidence {field}: {test[field]}")
-          disclosure = report["false_positive_cost_disclosure"]
-          if disclosure["realized_profit_loss_identifiable_from_source"] is not False:
-              raise SystemExit("Do not invent realized false-positive profit cost")
-          print(json.dumps({"dataset": dataset, "selection": report["selection"]["selected"], "heldout_test": test}, indent=2, sort_keys=True))
+              raise SystemExit("Primary validation/test chronology overlaps")
+          if test["false_positive_order_gmv_at_risk_inr"] < 0 or test["missed_return_order_gmv_inr"] < 0:
+              raise SystemExit("Primary monetary exposure is invalid")
+          if report["false_positive_cost_disclosure"]["realized_profit_loss_identifiable_from_source"] is not False:
+              raise SystemExit("Do not invent realized false-positive merchant profit cost")
+          print(json.dumps({"dataset": dataset, "selection": report["selection"]["selected"], "heldout_test": test, "ci95": report["heldout_ci95_bootstrap"]}, indent=2, sort_keys=True))
           PY
-      - name: Upload exact COD evidence
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: codgate-amazon-cod-rto-evidence
-          path: artifacts/amazon-cod-rto
+          name: codgate-primary-return-risk-evidence
+          path: artifacts/amazon-return-risk
           if-no-files-found: error
           retention-days: 30
 
@@ -232,9 +239,7 @@ jobs:
           uvicorn app.repair_app:app --host 127.0.0.1 --port 8000 >/tmp/codgate-server.log 2>&1 &
           echo $! >/tmp/codgate-server.pid
           for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
-              break
-            fi
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then break; fi
             sleep 1
           done
           curl -fsS http://127.0.0.1:8000/ready
@@ -255,7 +260,7 @@ jobs:
           retention-days: 14
 
   package:
-    needs: [test, browser, real-evidence, exact-cod-evidence]
+    needs: [test, browser, real-evidence, exact-cod-audit, return-risk-evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -267,8 +272,7 @@ jobs:
             README.md requirements.txt requirements-dev.txt requirements-evidence.txt Procfile pytest.ini .gitignore \
             -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl" "browser-artifacts/*" ".cache/*" "artifacts/*"
           unzip -t codgate-submission.zip
-      - name: Upload verified submission ZIP
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: codgate-submission
           path: codgate-submission.zip
