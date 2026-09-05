@@ -1,15 +1,15 @@
 """Frozen real-data RETURN_TO_SELLER detector runtime.
 
-This module is intentionally dependency-light and deterministic.  It loads the
-compact artifact produced by ``evidence.amazon_return_risk_v2``, verifies both
-artifact hashes against the frozen evidence summary, reproduces the exact
-training-time feature encoding/scaling, and evaluates the selected logistic
-model locally.
+This module is dependency-light and deterministic. It loads the compact artifact
+produced by ``evidence.amazon_return_risk_v2``, verifies both artifact hashes
+against the frozen evidence summary, reproduces the exact training-time feature
+encoding/scaling, and evaluates the selected logistic model locally.
 
-The detector itself never creates a Payment Link or changes money-moving state.
-Its bounded output is ``FLAG_RETURN_RISK`` or ``STANDARD_FLOW``.  A caller may
-supply its own false-positive unit cost for transparent economics; CodGate has
-no fabricated default merchant-loss number.
+Because the selected model was trained with ``class_weight='balanced'``, its
+logistic output is intentionally called a *risk score*, not a calibrated return
+probability. The detector never creates a Payment Link or changes money-moving
+state. A merchant may supply its own false-positive unit cost; CodGate has no
+fabricated default merchant-loss number.
 """
 
 from __future__ import annotations
@@ -32,6 +32,8 @@ EVIDENCE_PATH = ROOT / "data" / "return_risk_evidence_v2.json"
 def _norm_text(value: object) -> str:
     if value is None:
         return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
     return re.sub(r"\s+", " ", str(value).strip().lower())
 
 
@@ -89,14 +91,14 @@ def load_model() -> dict:
         raise RuntimeError("frozen return-risk model artifact is empty")
     try:
         compressed = base64.b64decode(encoded, validate=True)
-    except Exception as exc:  # pragma: no cover - defensive corruption path
+    except Exception as exc:  # pragma: no cover
         raise RuntimeError("frozen return-risk model base64 is invalid") from exc
     compressed_sha = hashlib.sha256(compressed).hexdigest()
     if compressed_sha != evidence["runtime_model_compressed_sha256"]:
         raise RuntimeError("frozen return-risk model compressed SHA-256 mismatch")
     try:
         raw = lzma.decompress(compressed)
-    except lzma.LZMAError as exc:  # pragma: no cover - defensive corruption path
+    except lzma.LZMAError as exc:  # pragma: no cover
         raise RuntimeError("frozen return-risk model xz payload is invalid") from exc
     raw_sha = hashlib.sha256(raw).hexdigest()
     if raw_sha != evidence["runtime_model_sha256"]:
@@ -190,12 +192,12 @@ def score_return_risk(order: dict, false_positive_cost_per_order_inr: float | No
         standardized.append((float(value) - float(mean)) / denominator)
     logit = float(model["i"]) + sum(float(weight) * value for weight, value in zip(model["w"], standardized))
     if logit >= 0:
-        probability = 1.0 / (1.0 + math.exp(-logit))
+        risk_score = 1.0 / (1.0 + math.exp(-logit))
     else:
         exp_logit = math.exp(logit)
-        probability = exp_logit / (1.0 + exp_logit)
+        risk_score = exp_logit / (1.0 + exp_logit)
     threshold = float(model["t"])
-    predicted_return = probability >= threshold
+    predicted_return = risk_score >= threshold
 
     merchant_cost = None
     heldout_false_positive_cost = None
@@ -209,7 +211,9 @@ def score_return_risk(order: dict, false_positive_cost_per_order_inr: float | No
     return {
         "loss_class": "RETURN_TO_SELLER",
         "model_version": "amazon-return-risk-v2",
-        "risk_probability": probability,
+        "risk_score": risk_score,
+        "score_is_calibrated_probability": False,
+        "score_semantics": "weighted-logistic ranking/decision score; compare with frozen threshold, do not read as an absolute return probability",
         "threshold": threshold,
         "predicted_return": predicted_return,
         "decision": "FLAG_RETURN_RISK" if predicted_return else "STANDARD_FLOW",
@@ -229,15 +233,11 @@ def score_return_risk(order: dict, false_positive_cost_per_order_inr: float | No
             "base_return_rate": evidence["heldout_test"]["prevalence"],
             "precision_lift": evidence["heldout_test"]["precision_lift_vs_prevalence"],
         },
-        "note": (
-            "Real-data return-risk detector. It never performs a payment action. "
-            "Merchant false-positive cost is reported only when explicitly supplied."
-        ),
+        "note": "Real-data return-risk detector; advisory only. Merchant false-positive cost is reported only when explicitly supplied.",
     }
 
 
 def detector_status() -> dict:
-    """Return integrity/provenance without scoring an order."""
     model = load_model()
     evidence = evidence_summary()
     return {
@@ -245,6 +245,8 @@ def detector_status() -> dict:
         "loss_class": "RETURN_TO_SELLER",
         "model_version": "amazon-return-risk-v2",
         "family": model["f"],
+        "class_weight": "balanced",
+        "score_is_calibrated_probability": False,
         "threshold": model["t"],
         "source_zip_sha256": model["s"],
         "runtime_model_sha256": evidence["runtime_model_sha256"],
