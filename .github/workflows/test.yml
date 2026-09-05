@@ -116,9 +116,6 @@ jobs:
           if split["validation"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
               raise SystemExit("Validation/test chronological overlap detected")
 
-          # The runtime exposes only this frozen aggregate. CI must prove that it
-          # is an exact copy of the independently regenerated evidence, not a
-          # hand-edited marketing number.
           if frozen["source"]["zip_sha256"] != source["zip_sha256"]:
               raise SystemExit("Frozen source SHA does not match reproduced source")
           if frozen["dataset"] != dataset:
@@ -147,6 +144,72 @@ jobs:
         with:
           name: codgate-real-rto-evidence
           path: artifacts/real-rto-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  exact-cod-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-evidence.txt
+      - run: pip install -r requirements-evidence.txt
+      - name: Build exact COD Amazon seller held-out evidence
+        run: python -m evidence.amazon_cod_rto
+      - name: Validate exact-COD evidence contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("artifacts/amazon-cod-rto/report.json").read_text())
+          source = report["source"]
+          dataset = report["dataset"]
+          split = report["split"]
+          test = report["heldout_test"]
+          leakage = report["privacy_and_leakage"]
+
+          if source["dataset_slug"] != "pranalibose/amazon-seller-order-status-prediction":
+              raise SystemExit("Unexpected exact-COD source")
+          if len(source["zip_sha256"]) != 64:
+              raise SystemExit("Exact-COD source SHA missing")
+          if dataset["cod_terminal_orders"] < 50:
+              raise SystemExit("Exact-COD terminal population too small")
+          if dataset["returned_to_seller"] < 5 or dataset["delivered_to_buyer"] < 20:
+              raise SystemExit("Exact-COD source lacks both terminal outcomes")
+          if test["n"] < 10 or test["positives"] < 1:
+              raise SystemExit("Exact-COD final holdout is not meaningful")
+          for metric in ("precision", "recall", "f1", "balanced_accuracy", "average_precision", "roc_auc"):
+              value = test[metric]
+              if not 0.0 <= value <= 1.0:
+                  raise SystemExit(f"Invalid exact-COD {metric}: {value}")
+          if any(leakage.values()):
+              raise SystemExit(f"Leakage/privacy contract violated: {leakage}")
+          if split["train"]["date_range"]["end"] > split["validation"]["date_range"]["start"]:
+              raise SystemExit("Exact-COD train/validation chronology overlaps")
+          if split["validation"]["date_range"]["end"] > split["test"]["date_range"]["start"]:
+              raise SystemExit("Exact-COD validation/test chronology overlaps")
+          for field in (
+              "false_positive_gmv_at_risk_inr",
+              "false_positive_source_shipping_fee_inr",
+              "missed_return_gmv_inr",
+              "missed_return_source_shipping_fee_inr",
+          ):
+              if test[field] < 0:
+                  raise SystemExit(f"Negative monetary evidence {field}: {test[field]}")
+          disclosure = report["false_positive_cost_disclosure"]
+          if disclosure["realized_profit_loss_identifiable_from_source"] is not False:
+              raise SystemExit("Do not invent realized false-positive profit cost")
+          print(json.dumps({"dataset": dataset, "selection": report["selection"]["selected"], "heldout_test": test}, indent=2, sort_keys=True))
+          PY
+      - name: Upload exact COD evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: codgate-amazon-cod-rto-evidence
+          path: artifacts/amazon-cod-rto
           if-no-files-found: error
           retention-days: 30
 
@@ -192,7 +255,7 @@ jobs:
           retention-days: 14
 
   package:
-    needs: [test, browser, real-evidence]
+    needs: [test, browser, real-evidence, exact-cod-evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
