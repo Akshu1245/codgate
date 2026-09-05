@@ -26,6 +26,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "data" / "return_risk_model_v2.xz.b64"
+MODEL_PART_PREFIX = "return_risk_model_v2.part"
+MODEL_PART_SUFFIX = ".b64"
+MODEL_PART_COUNT = 6
 EVIDENCE_PATH = ROOT / "data" / "return_risk_evidence_v2.json"
 
 
@@ -78,6 +81,26 @@ def _nonnegative_number(value: object, name: str) -> float:
     return number
 
 
+def _read_model_b64() -> str:
+    """Read one frozen artifact or the six Git-safe chunks used in the repo."""
+    if MODEL_PATH.exists():
+        encoded = MODEL_PATH.read_text(encoding="utf-8").strip()
+        if encoded:
+            return encoded
+
+    expected = [
+        ROOT / "data" / f"{MODEL_PART_PREFIX}{index:02d}{MODEL_PART_SUFFIX}"
+        for index in range(MODEL_PART_COUNT)
+    ]
+    missing = [path.name for path in expected if not path.exists()]
+    if missing:
+        raise RuntimeError(f"frozen return-risk model chunks missing: {', '.join(missing)}")
+    encoded = "".join(path.read_text(encoding="utf-8").strip() for path in expected)
+    if not encoded:
+        raise RuntimeError("frozen return-risk model artifact is empty")
+    return encoded
+
+
 @lru_cache(maxsize=1)
 def evidence_summary() -> dict:
     return json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
@@ -86,23 +109,27 @@ def evidence_summary() -> dict:
 @lru_cache(maxsize=1)
 def load_model() -> dict:
     evidence = evidence_summary()
-    encoded = MODEL_PATH.read_text(encoding="utf-8").strip()
-    if not encoded:
-        raise RuntimeError("frozen return-risk model artifact is empty")
+    encoded = _read_model_b64()
     try:
         compressed = base64.b64decode(encoded, validate=True)
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("frozen return-risk model base64 is invalid") from exc
     compressed_sha = hashlib.sha256(compressed).hexdigest()
     if compressed_sha != evidence["runtime_model_compressed_sha256"]:
-        raise RuntimeError("frozen return-risk model compressed SHA-256 mismatch")
+        raise RuntimeError(
+            "frozen return-risk model compressed SHA-256 mismatch: "
+            f"{compressed_sha} != {evidence['runtime_model_compressed_sha256']}"
+        )
     try:
         raw = lzma.decompress(compressed)
     except lzma.LZMAError as exc:  # pragma: no cover
         raise RuntimeError("frozen return-risk model xz payload is invalid") from exc
     raw_sha = hashlib.sha256(raw).hexdigest()
     if raw_sha != evidence["runtime_model_sha256"]:
-        raise RuntimeError("frozen return-risk model JSON SHA-256 mismatch")
+        raise RuntimeError(
+            "frozen return-risk model JSON SHA-256 mismatch: "
+            f"{raw_sha} != {evidence['runtime_model_sha256']}"
+        )
     model = json.loads(raw)
     if model.get("v") != 2 or model.get("f") != "logistic" or model.get("l") != "RETURN_TO_SELLER":
         raise RuntimeError("unsupported frozen return-risk model contract")
