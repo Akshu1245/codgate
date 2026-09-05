@@ -3,6 +3,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -219,6 +222,58 @@ jobs:
               raise SystemExit("Detector must identify at least some held-out returns")
           print(json.dumps({"dataset": dataset, "split": split, "selection": selected, "heldout_test": test, "ranking": report["ranking_checks"], "ci95": report["heldout_ci95_bootstrap"]}, indent=2, sort_keys=True))
           PY
+      - name: Freeze compact runtime model on source branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/real-rto-evidence'
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma
+          from pathlib import Path
+
+          model = json.loads(Path('artifacts/amazon-return-risk-v2/model.json').read_text())
+          evidence = json.loads(Path('data/return_risk_evidence_v2.json').read_text())
+          maps = {
+              column: {
+                  key: [int(value['count']), float(value['rate'])]
+                  for key, value in values.items()
+              }
+              for column, values in model['encoding']['maps'].items()
+          }
+          first_map = next(iter(maps.values()))
+          compact = {
+              'v': 2,
+              'f': 'logistic',
+              'l': 'RETURN_TO_SELLER',
+              't': model['threshold'],
+              's': model['source_zip_sha256'],
+              'c': model['categorical_columns'],
+              'g': model['encoding']['global_return_rate'],
+              'a': model['encoding']['alpha'],
+              'n': sum(item[0] for item in first_map.values()),
+              'm': maps,
+              'u': model['scaler_mean'],
+              'q': model['scaler_scale'],
+              'i': model['intercept'],
+              'w': model['coefficients'],
+          }
+          raw = json.dumps(compact, separators=(',', ':'), sort_keys=True).encode()
+          compressed = lzma.compress(raw, preset=9 | lzma.PRESET_EXTREME)
+          raw_sha = hashlib.sha256(raw).hexdigest()
+          compressed_sha = hashlib.sha256(compressed).hexdigest()
+          if raw_sha != evidence['runtime_model_sha256']:
+              raise SystemExit(f"runtime raw SHA mismatch: {raw_sha} != {evidence['runtime_model_sha256']}")
+          if compressed_sha != evidence['runtime_model_compressed_sha256']:
+              raise SystemExit(f"runtime compressed SHA mismatch: {compressed_sha} != {evidence['runtime_model_compressed_sha256']}")
+          Path('data/return_risk_model_v2.xz.b64').write_text(base64.b64encode(compressed).decode() + '\n')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/return_risk_model_v2.xz.b64
+          if git diff --cached --quiet; then
+            echo "Frozen runtime model already matches."
+          else
+            git commit -m "Freeze trained return-risk runtime model"
+            git push origin HEAD:feat/real-rto-evidence
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: codgate-primary-return-risk-evidence-v2
