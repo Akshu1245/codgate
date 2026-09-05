@@ -1,0 +1,81 @@
+name: real-fraud-evidence
+
+on:
+  push:
+    branches:
+      - feat/real-return-risk-evidence
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  real-fraud-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install real evidence dependencies
+        run: pip install -r requirements-real.txt
+      - name: Download public OpenML ULB fraud benchmark
+        run: |
+          mkdir -p data/real_raw artifacts/real_fraud
+          curl --fail --location --retry 3 --retry-all-errors \
+            -o data/real_raw/creditcard.arff \
+            "https://www.openml.org/data/v1/download/1673544/creditcard.arff"
+          test -s data/real_raw/creditcard.arff
+          ls -lh data/real_raw/creditcard.arff
+      - name: Train on past transactions and score frozen future holdout
+        run: |
+          python scripts/build_real_fraud_evidence.py \
+            --input data/real_raw/creditcard.arff \
+            --outdir artifacts/real_fraud
+      - name: Independently recompute final confusion and costs
+        run: |
+          python - <<'PY'
+          import gzip
+          import json
+          import pandas as pd
+          from pathlib import Path
+
+          report = json.loads(Path('artifacts/real_fraud/metrics.json').read_text())
+          df = pd.read_csv('artifacts/real_fraud/final_holdout.csv.gz')
+          y = df['Class'].astype(int)
+          p = df['prediction'].astype(int)
+          tp = int(((p == 1) & (y == 1)).sum())
+          fp = int(((p == 1) & (y == 0)).sum())
+          fn = int(((p == 0) & (y == 1)).sum())
+          tn = int(((p == 0) & (y == 0)).sum())
+          m = report['final_holdout']
+          assert (tp, fp, fn, tn) == (m['tp'], m['fp'], m['fn'], m['tn'])
+          precision = tp / (tp + fp) if tp + fp else 0.0
+          recall = tp / (tp + fn) if tp + fn else 0.0
+          assert abs(precision - m['precision']) < 1e-12
+          assert abs(recall - m['recall']) < 1e-12
+          fp_amount = float(df.loc[(p == 1) & (y == 0), 'Amount'].sum())
+          fn_amount = float(df.loc[(p == 0) & (y == 1), 'Amount'].sum())
+          assert abs(fp_amount - m['false_positive_amount_at_risk']) < 1e-6
+          assert abs(fn_amount - m['missed_fraud_amount']) < 1e-6
+          assert report['source']['rows'] == 284807
+          assert report['source']['frauds'] == 492
+          assert report['evaluation_protocol']['final_holdout_frauds'] >= 20
+          assert report['evaluation_protocol']['train_time_max'] <= report['evaluation_protocol']['validation_time_min']
+          assert report['evaluation_protocol']['validation_time_max'] <= report['evaluation_protocol']['final_time_min']
+          forbidden = ('class', 'label', 'target')
+          for feature in report['model']['feature_names']:
+              assert not any(token in feature.lower() for token in forbidden), feature
+          assert len(report['source']['raw_sha256']) == 64
+          print('INDEPENDENT FINAL EVIDENCE RECOMPUTE: PASS')
+          print(f'P={precision:.6f} R={recall:.6f} TP={tp} FP={fp} FN={fn} TN={tn}')
+          print(f'FP amount-at-risk={fp_amount:.2f} missed-fraud-amount={fn_amount:.2f}')
+          PY
+      - name: Upload real fraud evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: codgate-real-fraud-evidence
+          path: artifacts/real_fraud/
+          if-no-files-found: error
+          retention-days: 14
