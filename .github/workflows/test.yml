@@ -65,17 +65,62 @@ jobs:
           Path("/tmp/codgate-console.js").write_text(scripts[-1], encoding="utf-8")
           PY
           node --check /tmp/codgate-console.js
+
+  browser:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Start CodGate
+        env:
+          CODGATE_DATA_DIR: ${{ runner.temp }}/codgate-runtime
+        run: |
+          mkdir -p "$CODGATE_DATA_DIR"
+          uvicorn app.repair_app:app --host 127.0.0.1 --port 8000 >/tmp/codgate-server.log 2>&1 &
+          echo $! >/tmp/codgate-server.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/ready
+      - name: Run real-browser judge journey
+        env:
+          CODGATE_BASE_URL: http://127.0.0.1:8000
+          CODGATE_BROWSER_ARTIFACT_DIR: browser-artifacts
+        run: python tests/browser_judge_journey.py
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codgate-browser-evidence
+          path: |
+            browser-artifacts
+            /tmp/codgate-server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  package:
+    needs: [test, browser]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Build verified submission ZIP
-        if: matrix.python-version == '3.12'
         run: |
           rm -f codgate-submission.zip
           zip -r codgate-submission.zip \
             app static data docs tests .github \
-            README.md requirements.txt Procfile pytest.ini .gitignore \
-            -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl"
+            README.md requirements.txt requirements-dev.txt Procfile pytest.ini .gitignore \
+            -x "*/__pycache__/*" "*.pyc" "outcomes.jsonl" "payment_events.jsonl" "idempotency.jsonl" "browser-artifacts/*"
           unzip -t codgate-submission.zip
       - name: Upload verified submission ZIP
-        if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
           name: codgate-submission
